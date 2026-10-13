@@ -1,0 +1,10 @@
+<Configuration>
+  <Networking>Disable</Networking>
+  <ClipboardRedirection>Disable</ClipboardRedirection>
+  <MappedFolders>
+    <MappedFolder><HostFolder>D:\GD - TH\00 - Development\StudentHeadshotManager\release</HostFolder><SandboxFolder>C:\Delivery</SandboxFolder><ReadOnly>true</ReadOnly></MappedFolder>
+    <MappedFolder><HostFolder>D:\GD - TH\00 - Development\StudentHeadshotManager\packaging\sandbox-kit</HostFolder><SandboxFolder>C:\Checks</SandboxFolder><ReadOnly>true</ReadOnly></MappedFolder>
+    <MappedFolder><HostFolder>D:\GD - TH\00 - Development\StudentHeadshotManager\packaging\reports\sandbox-evidence</HostFolder><SandboxFolder>C:\Evidence</SandboxFolder><ReadOnly>false</ReadOnly></MappedFolder>
+  </MappedFolders>
+  <LogonCommand><Command>powershell.exe -NoExit -ExecutionPolicy Bypass -File C:\Checks\test_installer.ps1 -Installer C:\Delivery\StudentHeadshotManager-Setup.exe -EvidenceRoot C:\Evidence</Command></LogonCommand>
+</Configuration>
