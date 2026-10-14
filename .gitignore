@@ -12,6 +12,8 @@ __pycache__/
 htmlcov/
 dist/
 build/
+dist-*/
+build-*/
 
 release/
 release*/

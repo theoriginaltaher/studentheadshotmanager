@@ -2,6 +2,8 @@ param(
     [string]$Python = "$PSScriptRoot\.venv\Scripts\python.exe",
     [string]$ISCC = "$PSScriptRoot\packaging\tools\InnoSetup\ISCC.exe",
     [string]$VcRuntime = "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Redist\MSVC\14.44.35112\x64\Microsoft.VC143.CRT",
+    [string]$BuildDir = "$PSScriptRoot\build",
+    [string]$DistDir = "$PSScriptRoot\dist",
     [string]$ReleaseDir = "$PSScriptRoot\release"
 )
 $ErrorActionPreference = 'Stop'
@@ -31,7 +33,7 @@ New-Item -ItemType Directory -Force -Path $reports | Out-Null
 if ($LASTEXITCODE -ne 0) { throw 'Dependency validation failed.' }
 & $Python -m pytest -q --junitxml="$reports\pytest.xml" 2>&1 | Tee-Object -FilePath "$reports\pytest.txt"
 if ($LASTEXITCODE -ne 0) { throw 'Tests failed. Build stopped before cleaning artifacts.' }
-foreach ($targetPath in @((Join-Path $root 'build'),(Join-Path $root 'dist'),$ReleaseDir)) {
+foreach ($targetPath in @($BuildDir,$DistDir,$ReleaseDir)) {
     $target = [IO.Path]::GetFullPath($targetPath)
     if ([IO.Path]::GetDirectoryName($target) -ne $root) { throw "Unsafe cleanup target: $target" }
     if (Test-Path -LiteralPath $target) {
@@ -43,13 +45,17 @@ foreach ($targetPath in @((Join-Path $root 'build'),(Join-Path $root 'dist'),$Re
 & $Python packaging\prepare_assets.py
 if ($LASTEXITCODE -ne 0) { throw 'Asset preparation failed.' }
 $env:SHM_VC_RUNTIME = $VcRuntime
+$dist = [IO.Path]::GetFullPath($DistDir)
+$build = [IO.Path]::GetFullPath($BuildDir)
+$appSource = Join-Path $dist 'StudentHeadshotManager'
+$env:SHM_APP_SOURCE_DIR = $appSource
 $env:PATH = "$root\.venv\Scripts;$env:SystemRoot\System32;$env:SystemRoot"
-& $Python -m PyInstaller --noconfirm --clean --distpath "$root\dist" --workpath "$root\build" packaging\StudentHeadshotManager.spec 2>&1 | Tee-Object -FilePath "$reports\pyinstaller.txt"
+& $Python -m PyInstaller --noconfirm --clean --distpath "$dist" --workpath "$build" packaging\StudentHeadshotManager.spec 2>&1 | Tee-Object -FilePath "$reports\pyinstaller.txt"
 if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed.' }
-& $Python packaging\audit_dependencies.py "$root\dist\StudentHeadshotManager" | Tee-Object -FilePath "$reports\native-dependencies.json"
+& $Python packaging\audit_dependencies.py "$appSource" | Tee-Object -FilePath "$reports\native-dependencies.json"
 if ($LASTEXITCODE -ne 0) { throw 'Native dependency audit failed.' }
-$exe = Join-Path $root 'dist\StudentHeadshotManager\StudentHeadshotManager.exe'
-foreach ($file in @($exe,"$root\dist\StudentHeadshotManager\_internal\python312.dll","$root\dist\StudentHeadshotManager\_internal\vcruntime140.dll","$root\dist\StudentHeadshotManager\_internal\PySide6\plugins\platforms\qwindows.dll")) {
+$exe = Join-Path $appSource 'StudentHeadshotManager.exe'
+foreach ($file in @($exe,(Join-Path $appSource '_internal\python312.dll'),(Join-Path $appSource '_internal\vcruntime140.dll'),(Join-Path $appSource '_internal\PySide6\plugins\platforms\qwindows.dll'))) {
     if (-not (Test-Path -LiteralPath $file)) { throw "Required bundled component missing: $file" }
 }
 # Isolate runtime environment and working directory; this is NOT a clean-VM test.
@@ -75,7 +81,7 @@ $release = [IO.Path]::GetFullPath($ReleaseDir)
 if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
 $installer=Join-Path $release 'StudentHeadshotManager-Setup.exe'
 if (-not (Test-Path -LiteralPath $installer)) { throw 'Expected installer was not produced.' }
-Compress-Archive -Path "$root\dist\StudentHeadshotManager" -DestinationPath "$release\StudentHeadshotManager-Portable.zip" -CompressionLevel Optimal
+Compress-Archive -Path $appSource -DestinationPath "$release\StudentHeadshotManager-Portable.zip" -CompressionLevel Optimal
 $result=[ordered]@{result='BUILD PASS';installer=$installer;bytes=(Get-Item -LiteralPath $installer).Length;sha256=(Get-FileHash -LiteralPath $installer -Algorithm SHA256).Hash;packaged_test=$smoke;clean_vm_test='NOT RUN';camera_test='NOT RUN'}
 $result | ConvertTo-Json | Set-Content -Encoding UTF8 -LiteralPath "$release\build-result.json"
 Write-Host ($result | ConvertTo-Json)

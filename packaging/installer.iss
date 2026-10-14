@@ -1,4 +1,8 @@
-#define AppVersion "1.0.0"
+#define AppVersion "1.1.0"
+#define AppSourceDir GetEnv("SHM_APP_SOURCE_DIR")
+#if AppSourceDir == ""
+  #define AppSourceDir "..\dist\StudentHeadshotManager"
+#endif
 [Setup]
 AppId={{F58BDCC2-2C40-4F93-BB09-F6CEBB681A67}
 AppName=Student Headshot Manager
@@ -29,7 +33,7 @@ VersionInfoVersion={#AppVersion}
 [Tasks]
 Name: "desktopicon"; Description: "Create a desktop shortcut"; GroupDescription: "Shortcuts:"; Flags: unchecked
 [Files]
-Source: "..\dist\StudentHeadshotManager\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "{#AppSourceDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
 [Icons]
 Name: "{group}\Student Headshot Manager"; Filename: "{app}\StudentHeadshotManager.exe"; WorkingDir: "{app}"
 Name: "{autodesktop}\Student Headshot Manager"; Filename: "{app}\StudentHeadshotManager.exe"; WorkingDir: "{app}"; Tasks: desktopicon
