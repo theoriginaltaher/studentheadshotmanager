@@ -29,8 +29,15 @@ def qt_image(image, limit=None):
     return QImage(raw, image.width, image.height, image.width * channels, format_).copy()
 
 
-def preview_payload(row, original_data, cached=False, full=False):
-    original = load_oriented(original_data)
+def unpack_original(payload):
+    if isinstance(payload, tuple):
+        return payload
+    return payload, None
+
+
+def preview_payload(row, original_payload, cached=False, full=False):
+    original_data, source_path = unpack_original(original_payload)
+    original = load_oriented(original_data, source_path)
     payload = {"job": dict(row) if row else None, "cached": cached,
                "original": qt_image(original, None if full else 2048), "original_size": original.size}
     if row:
@@ -89,19 +96,20 @@ class ProcessingController(QObject):
                         capture_id, values = args
                         settings = ProcessingSettings(**values).validate()
                         if action == "process":
-                            row, cached, data = service.process(capture_id, settings,
+                            row, cached, original = service.process(capture_id, settings,
                                 lambda message: self.progress.emit(token, message))
                         else:
                             self.progress.emit(token, "Loading local previews…")
-                            row, data = service.preview(capture_id, settings)
+                            row, data, source = service.preview(capture_id, settings)
+                            original = (data, source)
                             cached = row is not None
-                        payload = preview_payload(row, data, cached)
+                        payload = preview_payload(row, original, cached)
                     elif action in ("take_preview", "take_full"):
                         capture_id = args[0]
                         latest = service.repo.latest(capture_id)
                         settings = ProcessingSettings(**json.loads(latest['settings_json'])) if latest else ProcessingSettings()
-                        row, data = service.preview(capture_id, settings)
-                        payload = preview_payload(row, data, row is not None, full=action == "take_full")
+                        row, data, source = service.preview(capture_id, settings)
+                        payload = preview_payload(row, (data, source), row is not None, full=action == "take_full")
                     elif action == "flag":
                         service.repo.flag(*args)
                         payload = {}

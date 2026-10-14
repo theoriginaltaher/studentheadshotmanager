@@ -52,7 +52,7 @@ def test_selected_only_structure_manifest_and_readonly(db,processing_capture,tmp
     result=execute_export(db.path,plan,tmp_path/'delivery')
     root=Path(result['destination']); file=root/plan.files[0]['relative']
     assert file.exists() and file.parent.name=='Grey Backgrounds'
-    assert 'Test class--' in str(file) and '001_Synthetic Subject' in file.name
+    assert 'Test class--' in str(file) and file.name=='001 - Synthetic Subject.jpg'
     with (root/'manifest.csv').open(encoding='utf-8-sig',newline='') as stream: rows=list(csv.DictReader(stream))
     assert rows[0]['student_id']=='001' and rows[0]['selected_filename']==plan.files[0]['relative']
     assert digest(db.path)==before

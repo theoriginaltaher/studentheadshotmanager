@@ -1,4 +1,4 @@
-"""Testable, Qt-independent JPEG settling, verification and original archiving."""
+"""Testable, Qt-independent image settling, verification and original archiving."""
 
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -15,7 +15,9 @@ import warnings
 from PIL import Image, ImageOps
 
 JPEG_EXTENSIONS = {".jpg", ".jpeg"}
-MAX_IMAGE_BYTES = 100 * 1024 * 1024
+RAW_EXTENSIONS = {".cr2", ".cr3"}
+IMAGE_EXTENSIONS = JPEG_EXTENSIONS | RAW_EXTENSIONS
+MAX_IMAGE_BYTES = 250 * 1024 * 1024
 
 
 def file_signature(path):
@@ -31,17 +33,25 @@ def file_hash(path):
     return digest.hexdigest()
 
 
-def inspect_jpeg(path, expected_signature):
+def rawpy_module():
+    try:
+        import rawpy
+    except ImportError as exc:
+        raise ValueError("RAW support requires the rawpy package.") from exc
+    return rawpy
+
+
+def thumbnail_bytes(image):
+    thumb = image.copy()
+    thumb.thumbnail((192, 144))
+    thumb = thumb.convert("RGB")
+    output = io.BytesIO()
+    thumb.save(output, "JPEG", quality=82)
+    return output.getvalue()
+
+
+def inspect_jpeg(path, expected_signature, data):
     """Decode all pixels and check the file again after reading, not just its header."""
-    if expected_signature[0] > MAX_IMAGE_BYTES:
-        raise ValueError("JPEG exceeds the 100 MB per-image limit.")
-    before = file_signature(path)
-    with Path(path).open("rb") as source:
-        data = source.read(MAX_IMAGE_BYTES + 1)
-    if len(data) > MAX_IMAGE_BYTES:
-        raise ValueError("JPEG exceeds the 100 MB per-image limit.")
-    if before != expected_signature or file_signature(path) != before:
-        raise ValueError("File is still changing.")
     if not data.startswith(b"\xff\xd8") or not data.rstrip(b"\x00\r\n ").endswith(b"\xff\xd9"):
         raise ValueError("JPEG is incomplete or has no end-of-image marker.")
     with warnings.catch_warnings():
@@ -51,14 +61,38 @@ def inspect_jpeg(path, expected_signature):
                 raise ValueError("Only JPEG images are supported.")
             image.load()  # Pillow rejects truncated image data by default.
             thumb = ImageOps.exif_transpose(image)
-            thumb.thumbnail((192, 144))
-            thumb = thumb.convert("RGB")
-            output = io.BytesIO()
-            thumb.save(output, "JPEG", quality=82)
+            thumbnail = thumbnail_bytes(thumb)
+    return thumbnail
+
+
+def inspect_raw(path):
+    rawpy = rawpy_module()
+    with rawpy.imread(str(path)) as raw:
+        rgb = raw.postprocess(use_camera_wb=True, half_size=True, output_bps=8)
+    return thumbnail_bytes(Image.fromarray(rgb))
+
+
+def inspect_image(path, expected_signature):
+    before = file_signature(path)
+    if expected_signature[0] > MAX_IMAGE_BYTES:
+        raise ValueError("Image exceeds the 250 MB per-image limit.")
+    with Path(path).open("rb") as source:
+        data = source.read(MAX_IMAGE_BYTES + 1)
+    if len(data) > MAX_IMAGE_BYTES:
+        raise ValueError("Image exceeds the 250 MB per-image limit.")
+    if before != expected_signature or file_signature(path) != before:
+        raise ValueError("File is still changing.")
+    suffix = Path(path).suffix.lower()
+    if suffix in JPEG_EXTENSIONS:
+        thumbnail = inspect_jpeg(path, expected_signature, data)
+    elif suffix in RAW_EXTENSIONS:
+        thumbnail = inspect_raw(path)
+    else:
+        raise ValueError("Only JPEG, CR2, and CR3 images are supported.")
     if file_signature(path) != before:
-        raise ValueError("File changed during JPEG validation.")
+        raise ValueError("File changed during image validation.")
     captured = datetime.fromtimestamp(before[1] / 1e9, timezone.utc).isoformat()
-    return hashlib.sha256(data).hexdigest(), output.getvalue(), captured
+    return hashlib.sha256(data).hexdigest(), thumbnail, captured
 
 
 @dataclass
@@ -83,7 +117,7 @@ class IngestionEngine:
         if assignment is None or self.folders is None:
             return False
         path = Path(path)
-        if path.suffix.lower() not in JPEG_EXTENSIONS or path.is_symlink() or path.is_dir():
+        if path.suffix.lower() not in IMAGE_EXTENSIONS or path.is_symlink() or path.is_dir():
             return False
         path = path.resolve()
         if path.parent != Path(self.folders.incoming).resolve():
@@ -121,11 +155,11 @@ class IngestionEngine:
                 if now - pending.last_change < self.settle_seconds or now - pending.last_attempt < 1:
                     continue
                 pending.last_attempt = now
-                digest, thumbnail, captured = inspect_jpeg(pending.path, signature)
+                digest, thumbnail, captured = inspect_image(pending.path, signature)
             except (OSError, ValueError, Image.DecompressionBombError, Image.DecompressionBombWarning) as exc:
                 if now - pending.last_change < self.incomplete_timeout:
                     continue
-                self.repo.fail(pending.capture_id, f"Could not read a complete JPEG: {exc}")
+                self.repo.fail(pending.capture_id, f"Could not read a complete image: {exc}")
             else:
                 self.repo.ready(pending.capture_id, signature, digest, thumbnail, captured)
             del self.pending[key]
@@ -168,7 +202,10 @@ class IngestionEngine:
             folder = (Path(self.folders.originals) / row["received_at"][:10] /
                       row["session_id"] / f"student-{safe_id}-{row['student_record_id'] or 'archived'}")
             folder.mkdir(parents=True, exist_ok=True)
-            destination = folder / f"{capture_id}-{uuid.uuid4().hex}.jpg"
+            extension = Path(row["original_path"]).suffix.lower()
+            if extension not in IMAGE_EXTENSIONS:
+                extension = ".jpg"
+            destination = folder / f"{capture_id}-{uuid.uuid4().hex}{extension}"
             self.repo.claim_copy(capture_id, destination)
             claimed = True
             copy_verified(Path(row["original_path"]), destination, row["content_hash"])

@@ -1,7 +1,7 @@
 # Bundled components
 
-Python 3.12, PySide6/Qt 6.8.3, shiboken6, NumPy, OpenCV, Pillow and watchdog are
-bundled. Exact versions are in requirements-build.lock. Upstream notices collected
+Python 3.12, PySide6/Qt 6.8.3, shiboken6, NumPy, OpenCV, Pillow, rawpy/LibRaw and
+watchdog are bundled. Exact versions are in requirements-build.lock. Upstream notices collected
 from installed distributions accompany the application under _internal/licenses.
 
 Qt/PySide are dynamically linked under their applicable licences. Compatible
@@ -17,6 +17,8 @@ Corresponding upstream sources:
 - https://github.com/opencv/opencv/tree/4.12.0
 - https://github.com/python-pillow/Pillow/tree/11.3.0
 - https://github.com/numpy/numpy/tree/v2.2.6
+- https://github.com/letmaik/rawpy/tree/v0.25.1
+- https://www.libraw.org/
 - https://github.com/gorakhargosh/watchdog/tree/v6.0.0
 
 PyInstaller's exception permits distribution of applications using its bootloader.

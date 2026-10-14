@@ -28,6 +28,22 @@ def digest(path):
     return result.hexdigest()
 
 
+def student_filename(student_id, name, extension):
+    suffix = extension if str(extension).startswith('.') else f'.{extension}'
+    return f"{safe_name(student_id,80)} - {safe_name(name,80)}{suffix.lower()}"
+
+
+def unique_relative(path, used):
+    path = Path(path)
+    candidate = path
+    counter = 2
+    while str(candidate).casefold() in used:
+        candidate = path.with_name(f"{path.stem} ({counter}){path.suffix}")
+        counter += 1
+    used.add(str(candidate).casefold())
+    return str(candidate)
+
+
 @dataclass(frozen=True)
 class ExportOptions:
     mode: str = MODES[0]
@@ -80,6 +96,7 @@ def build_plan(database, options):
     flags={row['capture_id']:row['flag'] for row in data['portrait_flags']}
     reviews={row['capture_id']:row for row in data['processing_reviews']}
     students=list(data['students'])
+    used_paths=set()
     # Archived photographs survive roster deletion; retain them in project-wide exports.
     if options.class_id is None and options.mode in ('All originals','All processed takes','Complete project'):
         for photo in data['captures']:
@@ -140,8 +157,9 @@ def build_plan(database, options):
             for key in keys:
                 if key not in assets: continue
                 source,sha=assets[key]; folder={'original':'Originals','cutout':'Transparent','portrait':'Grey Backgrounds'}[key]
-                filename=f"{safe_name(student['student_id'],80)}_{safe_name(name,40)}--{safe_name(sid,40)}--{safe_name(cid,64)}{'.png' if key=='cutout' else '.jpg'}"
-                relative=str(Path(class_folder)/folder/filename)
+                extension = Path(source).suffix if key == 'original' else ('.png' if key == 'cutout' else '.jpg')
+                filename=student_filename(student['student_id'],name,extension)
+                relative=unique_relative(Path(class_folder)/folder/filename,used_paths)
                 job=jobs.get(cid)
                 status=photo['processing_status'] if key=='original' else job['status']
                 item={'source':source,'sha256':sha,'relative':relative,'record_id':sid,'capture_id':cid,'kind':key,'selected':cid==final,

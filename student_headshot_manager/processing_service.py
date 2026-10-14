@@ -1,6 +1,7 @@
 """Local file outputs, content-addressed reuse, and explicit result approval."""
 
 import hashlib
+import inspect
 import json
 import os
 from pathlib import Path
@@ -12,6 +13,13 @@ from .capture_repository import CaptureRepository
 from .ingestion import file_hash
 from . import processing
 from .processing_repository import ProcessingRepository
+
+
+def process_source_bytes(data, settings, source):
+    parameters = inspect.signature(processing.process_bytes).parameters
+    if len(parameters) >= 3:
+        return processing.process_bytes(data, settings, source)
+    return processing.process_bytes(data, settings)
 
 
 class ProcessingService:
@@ -75,11 +83,11 @@ class ProcessingService:
             data, digest = processing.read_original(source)
             cached = self.matching(capture_id, digest, settings)
             if cached:
-                return cached, True, data
+                return cached, True, (data, source)
             key = self.cache_key(digest, settings)
             job_id = self.repo.create(capture_id, settings, processing.PIPELINE_VERSION, str(source), digest, key)
             phase("Building the full-resolution mask and portrait…")
-            output = processing.process_bytes(data, settings)
+            output = process_source_bytes(data, settings, source)
             output.diagnostics["source_size"] = list(output.cutout.size)
             output.diagnostics["portrait_size"] = list(output.portrait.size)
             if capture["content_hash"] != digest:
@@ -111,7 +119,7 @@ class ProcessingService:
             outputs = {name: {"path": str(destination / spec[1]), "sha256": file_hash(destination / spec[1])}
                        for name, spec in specs.items()}
             self.repo.complete(job_id, output.diagnostics, outputs)
-            return self.repo.get(job_id), False, data
+            return self.repo.get(job_id), False, (data, source)
         except Exception as exc:
             if job_id is None:
                 job_id = self.repo.create(capture_id, settings, processing.PIPELINE_VERSION, str(source) if source else None)
@@ -126,7 +134,7 @@ class ProcessingService:
     def preview(self, capture_id, settings):
         _, source = self.source(capture_id)
         data, digest = processing.read_original(source)
-        return self.matching(capture_id, digest, settings), data
+        return self.matching(capture_id, digest, settings), data, source
 
     def approve(self, job_id, acknowledged=False):
         row = self.repo.get(job_id)

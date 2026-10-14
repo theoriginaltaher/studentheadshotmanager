@@ -9,6 +9,7 @@ from samples.generate_processing_samples import make_sample
 from student_headshot_manager.processing import (
     ProcessingSettings, composite_portrait, make_mask, process_image, suppress_spill,
 )
+import student_headshot_manager.processing as processing
 
 
 def clean_settings(**changes):
@@ -30,6 +31,30 @@ def test_full_resolution_cutout_and_grey_composite(tmp_path):
     assert output.portrait.getpixel((0, 0)) == (180, 180, 180)
     assert not output.diagnostics["blocking"]
     assert path.read_bytes() == original and path.stat().st_mtime_ns == stat.st_mtime_ns
+
+
+def test_raw_source_uses_raw_decoder_without_modifying_original(tmp_path, monkeypatch):
+    path = tmp_path / "subject.CR3"
+    path.write_bytes(b"raw-camera-bytes")
+    rgb = np.full((120, 90, 3), (0, 220, 0), dtype=np.uint8)
+    rgb[35:95, 30:60] = (180, 100, 80)
+
+    class FakeRaw:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+        def postprocess(self, **kwargs): return rgb
+
+    class FakeRawpy:
+        @staticmethod
+        def imread(source):
+            assert str(source).endswith("subject.CR3")
+            return FakeRaw()
+
+    monkeypatch.setattr(processing, "rawpy_module", lambda: FakeRawpy)
+    output = process_image(path, clean_settings())
+    assert output.cutout.size == (90, 120)
+    assert output.portrait.size == (120, 160)
+    assert path.read_bytes() == b"raw-camera-bytes"
 
 
 @pytest.mark.parametrize("orientation", range(1, 9))

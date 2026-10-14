@@ -18,7 +18,7 @@ if (assets/'brand-icon.png').exists():
 image.save(assets/'app.ico',sizes=[(16,16),(24,24),(32,32),(48,48),(64,64),(128,128),(256,256)])
 Image.new('RGB',(1,1),(180,180,180)).save(assets/'default-grey.png')
 licenses=root/'packaging'/'generated-licenses';licenses.mkdir(exist_ok=True)
-for name in ('PySide6','PySide6_Essentials','PySide6_Addons','shiboken6','numpy','Pillow','opencv-python-headless','watchdog','PyInstaller'):
+for name in ('PySide6','PySide6_Essentials','PySide6_Addons','shiboken6','numpy','Pillow','opencv-python-headless','rawpy','watchdog','PyInstaller'):
  dist=metadata.distribution(name)
  candidates=[]
  dist_info=Path(getattr(dist,'_path',Path()))

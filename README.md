@@ -53,7 +53,7 @@ python -m venv .venv
 - Import CSV files through column mapping and a row-by-row validation preview.
 - Changes save immediately to SQLite and survive restarting the application.
 
-Capture receives JPEGs from an Incoming folder with explicit assignment review.
+Capture receives JPEG and Canon RAW (`.cr2`, `.cr3`) files from an Incoming folder with explicit assignment review.
 Review provides local green-screen removal and portrait compositing. The Export manager supports class and project deliveries. Direct camera
 control remains unimplemented. Archived originals are
 byte-for-byte copies.
@@ -68,8 +68,8 @@ byte-for-byte copies.
    New photographs and roster refreshes do not advance the student selection.
    Deleting the active student clears the selection and pauses monitoring.
 3. Click **Resume watcher**. The indicator reports Watching, Paused, or Disconnected
-   with the reason. Use your transfer software to place JPEGs in Incoming.
-   Only top-level `.jpg` and `.jpeg` files are watched, case-insensitively.
+   with the reason. Use your transfer software to place images in Incoming.
+   Only top-level `.jpg`, `.jpeg`, `.cr2`, and `.cr3` files are watched, case-insensitively.
    Subdirectories, symlinks, and other formats are ignored.
 4. Inspect each thumbnail, **Student assignment**, and status. The proposed student
    and session are frozen at first detection, before the file settles. Changing
@@ -90,16 +90,16 @@ Discarding/reassigning does not reset the manually editable roster status.
 ### Transfer stability and recovery
 
 - watchdog notifications feed a background worker. A two-second rescan catches
-  missed notifications. Hashing, full JPEG decode, thumbnails, and copying run
+  missed notifications. Hashing, full image decode, thumbnails, and copying run
   off the GUI thread using a separate SQLite connection.
-- Files must keep the same size and modification time for at least two seconds,
-  have a JPEG end marker, and pass full pixel decoding. Stable but incomplete or
+- Files must keep the same size and modification time for at least two seconds
+  and pass full pixel decoding. Stable but incomplete or
   unreadable files are retried internally for 30 seconds, then display an error
   with **Retry import**. Continuously growing files stay Receiving.
 - A durable Receiving record includes the proposed student and session immediately.
   Partial data produces no thumbnail or accepted original. Capture time is the
   source modification time in UTC, explicitly labelled, not inferred EXIF time.
-  JPEGs are limited to 100 MB and Pillow's decompression-bomb limits.
+  Images are limited to 250 MB. Decoded working images are limited to 40 megapixels.
 - Pause stops new detections; already detected files may finish. Confirmation,
   reassignment, discard, and retry remain available. Resume also scans existing files.
   Unseen files left during a pause are proposed for the student/session selected
@@ -120,7 +120,7 @@ Discarding/reassigning does not reset the manually editable roster status.
 ### Original storage and history
 
 ```text
-Originals/YYYY-MM-DD/<session-id>/student-<safe-student-id>-<record-id>/<capture-id>-<random-id>.jpg
+Originals/YYYY-MM-DD/<session-id>/student-<safe-student-id>-<record-id>/<capture-id>-<random-id>.<source-ext>
 ```
 
 Unique IDs and exclusive creation prevent filename collisions from overwriting
@@ -197,7 +197,7 @@ fits the full frame inside the chosen canvas and padding, over the selected grey
 value; it neither stretches nor crops the subject. PNG/JPEG output orientation is
 normalized to 1. ICC profiles are retained; other original EXIF metadata is not
 copied in full. Original files remain unchanged. Processing explicitly rejects
-sources over 100 MB or 40 million pixels instead of silently reducing resolution.
+sources over 250 MB or 40 million decoded pixels instead of silently reducing resolution.
 
 ```text
 Processed/<capture-id>/<cache-prefix>-<job-id>/cutout.png
@@ -205,7 +205,9 @@ Processed/<capture-id>/<cache-prefix>-<job-id>/mask.png
 Processed/<capture-id>/<cache-prefix>-<job-id>/portrait.jpg
 ```
 
-JPEG defaults to quality 95 with no chroma subsampling. Each job records its settings,
+JPEG defaults to quality 95 with no chroma subsampling. RAW files are developed locally
+through rawpy/LibRaw for previews and processed outputs; archived RAW originals remain
+unchanged for later color/exposure edits. Each job records its settings,
 source hash, output paths/hashes, status, diagnostics, and errors in SQLite. The cache
 key includes source content, every processing setting, and pipeline version. Valid
 cached files are reused across restarts; missing or changed outputs are regenerated.
@@ -284,17 +286,17 @@ the whole import. Cancelling the preview makes no changes.
 
 Every export creates a new `Export-<timestamp>-<unique-id>` directory. Existing
 exports are never overwritten, so no overwrite confirmation is needed. Filenames
-contain sanitized student ID and name plus internal student/capture identifiers.
+use sanitized student ID, a hyphen, and student name. If a folder would otherwise
+contain duplicate names, the later files receive ` (2)`, ` (3)` and so on.
 Long display names are shortened; complete names remain in the manifest.
-These identifiers distinguish duplicate names, reused IDs and sanitized-name collisions.
 Class folders retain a readable name and internal class ID:
 
 ```text
 Export-<timestamp>-<unique-id>/
   Class name--<class-id>/
-    Originals/<student-id>_<name>--<record-id>--<capture-id>.jpg
-    Transparent/<student-id>_<name>--<record-id>--<capture-id>.png
-    Grey Backgrounds/<student-id>_<name>--<record-id>--<capture-id>.jpg
+    Originals/<student-id> - <name>.<source-ext>
+    Transparent/<student-id> - <name>.png
+    Grey Backgrounds/<student-id> - <name>.jpg
   manifest.csv
   files.csv
   summary.json
@@ -414,7 +416,7 @@ Filters remain active after edits and imports; clear them if a student is hidden
 Tests cover schema initialization, persistence across reconnection, class and
 student CRUD, status changes, filtering, uniqueness, foreign keys, cascade
 deletion, import mapping and validation, duplicate detection, rollback, and Qt
-editor/roster/import interactions. Capture tests cover incomplete/growing JPEGs,
+editor/roster/import interactions. Capture tests cover incomplete/growing images,
 duplicates across restarts, snapshot assignment, reassignment, discard, copy
 collisions, source changes, retry, interrupted-copy recovery, v1 migration, a real
 watchdog observer, pause/resume, worker ownership, thumbnails, and capture controls.
@@ -439,7 +441,7 @@ student_headshot_manager/
   roster_import.py                  CSV reading, mapping, validation, import
   capture_repository.py             Additive schema, sessions, assignments, history
   folders.py                        Folder configuration and access checks
-  ingestion.py                      Settling, JPEG verification and safe copying
+  ingestion.py                      Settling, JPEG/RAW verification and safe copying
   capture_worker.py                 Background worker and watchdog lifecycle
   exporting.py                      Read-only export plans, manifests and safe copies
   export_worker.py                  Background planning and export progress

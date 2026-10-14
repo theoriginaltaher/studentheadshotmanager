@@ -13,7 +13,8 @@ from PIL import Image, ImageOps
 
 PIPELINE_VERSION = "local-chroma-key-1"
 MAX_PIXELS = 40_000_000
-MAX_BYTES = 100 * 1024 * 1024
+MAX_BYTES = 250 * 1024 * 1024
+RAW_EXTENSIONS = {".cr2", ".cr3"}
 
 
 @dataclass(frozen=True)
@@ -75,7 +76,7 @@ def read_original(path):
     path = Path(path)
     before = path.stat()
     if before.st_size > MAX_BYTES:
-        raise ValueError("Original exceeds the 100 MB image limit.")
+        raise ValueError("Original exceeds the 250 MB image limit.")
     with path.open("rb") as file:
         data = file.read(MAX_BYTES + 1)
     after = path.stat()
@@ -84,8 +85,30 @@ def read_original(path):
     return data, hashlib.sha256(data).hexdigest()
 
 
-def load_oriented(data):
+def rawpy_module():
+    try:
+        import rawpy
+    except ImportError as exc:
+        raise ValueError("RAW support requires the rawpy package.") from exc
+    return rawpy
+
+
+def load_raw(path):
+    if path is None:
+        raise ValueError("RAW processing requires access to the archived original file.")
+    rawpy = rawpy_module()
+    with rawpy.imread(str(path)) as raw:
+        rgb = raw.postprocess(use_camera_wb=True, output_bps=8)
+    if rgb.shape[0] * rgb.shape[1] > MAX_PIXELS:
+        raise ValueError("Original exceeds 40 megapixels. It was not downscaled or changed.")
+    return Image.fromarray(rgb).convert("RGB")
+
+
+def load_oriented(data, source_path=None):
     """Apply EXIF orientation without resampling; output coordinates are upright."""
+    path = Path(source_path) if source_path else None
+    if path and path.suffix.lower() in RAW_EXTENSIONS:
+        return load_raw(path)
     with warnings.catch_warnings():
         warnings.simplefilter("error", Image.DecompressionBombWarning)
         with Image.open(io.BytesIO(data)) as source:
@@ -202,9 +225,9 @@ class ProcessingOutput:
     icc_profile: bytes | None
 
 
-def process_bytes(data, settings):
+def process_bytes(data, settings, source_path=None):
     settings.validate()
-    original = load_oriented(data)
+    original = load_oriented(data, source_path)
     rgb = np.asarray(original)
     foreground, alpha, diagnostics = make_mask(rgb, settings)
     corrected = suppress_spill(rgb, foreground, alpha, settings.spill_strength, settings.spill_width)
@@ -217,4 +240,4 @@ def process_bytes(data, settings):
 
 def process_image(path, settings=None):
     data, _ = read_original(path)
-    return process_bytes(data, settings or ProcessingSettings())
+    return process_bytes(data, settings or ProcessingSettings(), path)
