@@ -28,7 +28,7 @@ class ImportDialog(QDialog):
         source.setTextFormat(Qt.PlainText)
         source.setObjectName("muted")
         layout.addWidget(source)
-        note = QLabel("Map the three required fields. New classes will be created automatically. "
+        note = QLabel("Map the four required fields. New classes will be created automatically. "
                       "Existing students are never overwritten. All rows must pass validation.")
         note.setWordWrap(True)
         layout.addWidget(note)
@@ -54,8 +54,8 @@ class ImportDialog(QDialog):
         self.summary = QLabel()
         self.summary.setWordWrap(True)
         layout.addWidget(self.summary)
-        self.table = QTableWidget(0, 5)
-        self.table.setHorizontalHeaderLabels(["CSV row", "Student ID", "Full name", "Class", "Validation"])
+        self.table = QTableWidget(0, 6)
+        self.table.setHorizontalHeaderLabels(["CSV row", "Student ID", "Full name", "Class", "Filename", "Validation"])
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
         self.table.verticalHeader().hide()
@@ -64,7 +64,8 @@ class ImportDialog(QDialog):
         self.table.setColumnWidth(1, 110)
         self.table.setColumnWidth(2, 180)
         self.table.setColumnWidth(3, 110)
-        self.table.horizontalHeader().setSectionResizeMode(4, QHeaderView.Stretch)
+        self.table.setColumnWidth(4, 260)
+        self.table.horizontalHeader().setSectionResizeMode(5, QHeaderView.Stretch)
         layout.addWidget(self.table, 1)
         actions = QHBoxLayout()
         self.errors_only = QPushButton("Show only errors")
@@ -105,7 +106,7 @@ class ImportDialog(QDialog):
         visible = [row for row in rows if row.errors or not self.errors_only.isChecked()]
         self.table.setRowCount(len(visible))
         for i, row in enumerate(visible):
-            for j, value in enumerate((str(row.line), row.student_id, row.full_name, row.class_name,
+            for j, value in enumerate((str(row.line), row.student_id, row.full_name, row.class_name, row.export_filename,
                                        " ".join(row.errors) if row.errors else "Ready")):
                 item = QTableWidgetItem(value)
                 item.setToolTip(value)

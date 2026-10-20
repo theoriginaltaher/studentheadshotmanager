@@ -181,7 +181,7 @@ def test_v2_upgrade_preserves_existing_capture_and_roster(db, processing_capture
     db.connection.executescript("DROP TABLE processing_reviews; DROP TABLE processing_jobs; PRAGMA user_version=2;")
     upgraded = Database(db.path)
     try:
-        assert upgraded.connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert upgraded.connection.execute("PRAGMA user_version").fetchone()[0] == 6
         row = CaptureRepository(upgraded).get(capture_id)
         assert row["processing_status"] == "imported"
         assert row["original_copy_path"] == str(original)

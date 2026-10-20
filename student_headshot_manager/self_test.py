@@ -38,7 +38,9 @@ def run(directory,app):
         raise AssertionError('Background operation timed out')
     try:
         db=Database(directory/'Roster ü.sqlite3')
-        csv=directory/'Students ü.csv';csv.write_text('Student ID,Full name,Class\n001,José 李 Silva,Prize Class A\n002,Second Student,Prize Class A\n',encoding='utf-8')
+        csv=directory/'Students ü.csv';csv.write_text(
+            'Student ID,Full name,Class,Filename\n001,José 李 Silva,Prize Class A,001_PRIZE_JOSE\n'
+            '002,Second Student,Prize Class A,002_PRIZE_SECOND\n',encoding='utf-8')
         data=read_csv(csv);assert import_csv(data,suggest_mapping(data),db)==2;passed('CSV import with Unicode and spaces')
         repo=CaptureRepository(db);student=db.students(search='001')[0]['id'];session=repo.create_session('Prize-giving synthetic session')
         folders=Folders(*(str(directory/'Photo files ü'/n) for n in ('Incoming','Originals','Processed','Export')))

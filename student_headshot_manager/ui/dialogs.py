@@ -66,6 +66,8 @@ class StudentDialog(RecordDialog):
         self.student_id.setMaxLength(80)
         self.full_name = QLineEdit(record["full_name"] if record else "")
         self.full_name.setMaxLength(200)
+        self.export_filename = QLineEdit(record["export_filename"] if record else "")
+        self.export_filename.setMaxLength(200)
         self.class_choice = QComboBox()
         for item in db.classes():
             self.class_choice.addItem(item["name"], item["id"])
@@ -79,6 +81,7 @@ class StudentDialog(RecordDialog):
             self.status.setCurrentText(record["status"])
         self.form.addRow("Student &ID", self.student_id)
         self.form.addRow("Full &name", self.full_name)
+        self.form.addRow("Export &filename", self.export_filename)
         self.form.addRow("&Class", self.class_choice)
         self.form.addRow("Photography &status", self.status)
         note = QLabel("Status can be edited manually. Accepting an incoming photograph also marks a student as Captured.")
@@ -91,4 +94,5 @@ class StudentDialog(RecordDialog):
         self.saved_id = self.db.save_student(
             self.student_id.text(), self.full_name.text(), self.class_choice.currentData(),
             self.status.currentText(), self.record["id"] if self.record else None,
+            self.export_filename.text() or None,
         )

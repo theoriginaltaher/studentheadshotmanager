@@ -22,9 +22,10 @@ def migrate(db):
         AFTER UPDATE OF student_record_id,processing_status ON captures
         WHEN NEW.processing_status != 'imported' OR NEW.student_record_id IS NOT OLD.student_record_id
         BEGIN DELETE FROM final_portraits WHERE capture_id=NEW.id; END;
-        PRAGMA user_version=4;
         COMMIT;
     """)
+    if db.connection.execute("PRAGMA user_version").fetchone()[0] < 4:
+        db.connection.execute("PRAGMA user_version = 4")
 
 
 class ReviewRepository:

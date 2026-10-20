@@ -1,13 +1,13 @@
-student_id,full_name,class
-0001,Amelia Perera,Year 7 A
-0002,Noah Silva,Year 7 A
-0003,Isabella Fernando,Year 7 A
-0004,Oliver Jayasinghe,Year 7 B
-0005,Sophia Wijesinghe,Year 7 B
-0006,"Chen, Lucas",Year 7 B
-0007,Ava de Alwis,Year 8 A
-0008,Ethan Dissanayake,Year 8 A
-0009,Mia Gunawardena,Year 8 A
-0010,Liam Ratnayake,Year 8 B
-0011,Charlotte Senanayake,Year 8 B
-0012,Benjamin Wickramasinghe,Year 8 B
+student_id,full_name,class,filename
+0001,Amelia Perera,Year 7 A,0001_Y7A_AMELIA_PERERA
+0002,Noah Silva,Year 7 A,0002_Y7A_NOAH_SILVA
+0003,Isabella Fernando,Year 7 A,0003_Y7A_ISABELLA_FERNANDO
+0004,Oliver Jayasinghe,Year 7 B,0004_Y7B_OLIVER_JAYASINGHE
+0005,Sophia Wijesinghe,Year 7 B,0005_Y7B_SOPHIA_WIJESINGHE
+0006,"Chen, Lucas",Year 7 B,0006_Y7B_CHEN_LUCAS
+0007,Ava de Alwis,Year 8 A,0007_Y8A_AVA_DE_ALWIS
+0008,Ethan Dissanayake,Year 8 A,0008_Y8A_ETHAN_DISSANAYAKE
+0009,Mia Gunawardena,Year 8 A,0009_Y8A_MIA_GUNAWARDENA
+0010,Liam Ratnayake,Year 8 B,0010_Y8B_LIAM_RATNAYAKE
+0011,Charlotte Senanayake,Year 8 B,0011_Y8B_CHARLOTTE_SENANAYAKE
+0012,Benjamin Wickramasinghe,Year 8 B,0012_Y8B_BENJAMIN_WICKRAMASINGHE

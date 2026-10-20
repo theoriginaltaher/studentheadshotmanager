@@ -52,9 +52,10 @@ def test_selected_only_structure_manifest_and_readonly(db,processing_capture,tmp
     result=execute_export(db.path,plan,tmp_path/'delivery')
     root=Path(result['destination']); file=root/plan.files[0]['relative']
     assert file.exists() and file.parent.name=='Grey Backgrounds'
-    assert 'Test class--' in str(file) and file.name=='001 - Synthetic Subject.jpg'
+    assert 'Test class--' in str(file) and file.name=='001 - Synthetic Subject-GR.jpg'
     with (root/'manifest.csv').open(encoding='utf-8-sig',newline='') as stream: rows=list(csv.DictReader(stream))
-    assert rows[0]['student_id']=='001' and rows[0]['selected_filename']==plan.files[0]['relative']
+    assert rows[0]['student_id']=='001' and rows[0]['export_filename']=='001 - Synthetic Subject'
+    assert rows[0]['selected_filename']==plan.files[0]['relative']
     assert digest(db.path)==before
     assert all(digest(path)==checksum for path,checksum in originals.items())
     again=execute_export(db.path,plan,tmp_path/'delivery')
@@ -98,7 +99,7 @@ def test_complete_class_project_and_duplicate_names(db,processing_capture,tmp_pa
 def test_transparent_processed_and_every_take(db,processing_capture):
     ready(db,processing_capture); another_take(db,processing_capture)
     plan=build_plan(db.path,ExportOptions('Selected transparent portraits'))
-    assert len(plan.files)==1 and plan.files[0]['relative'].endswith('.png')
+    assert len(plan.files)==1 and plan.files[0]['relative'].endswith('001 - Synthetic Subject-TR.png')
     assert len(build_plan(db.path,ExportOptions('All processed takes')).files)==4
     assert len(build_plan(db.path,ExportOptions(every_take=True)).files)==6
 

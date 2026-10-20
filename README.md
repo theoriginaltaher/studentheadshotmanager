@@ -46,8 +46,12 @@ python -m venv .venv
 
 - Create, rename, and delete classes. Deleting a class requires confirmation and
   also deletes its students. Cancel is the default; deletion cannot be undone.
-- Create, edit, move, and delete students with a student ID, full name, and class.
-- Search by name or ID, filter by class and photography status, and sort columns.
+- Arrange classes in a saved custom order with the up/down controls. Ctrl/Shift-select
+  multiple classes to move them as a group or delete them together.
+- Create, edit, move, and delete students with a student ID, full name, class, and export filename.
+- Ctrl/Shift-select multiple student rows to delete them together. Editing remains
+  available only when one student is selected.
+- Search by name, ID, or export filename; filter by class and photography status; and sort columns.
 - Manually record **Not photographed**, **Captured**, **Needs review**, or **Complete**
   in the student editor. A status is a roster label, not proof that a photo exists.
 - Import CSV files through column mapping and a row-by-row validation preview.
@@ -238,7 +242,7 @@ on a particular workstation. Inspect representative local photographs before use
 ## Import a roster
 
 1. Choose **Import CSV** (Ctrl+I), then select a UTF-8 comma-separated CSV.
-2. Map columns to **Student ID**, **Full name**, and **Class**. Common headers are
+2. Map columns to **Student ID**, **Full name**, **Class**, and **Filename**. Common headers are
    mapped automatically; any other column names can be mapped manually.
 3. Inspect the preview and validation messages. Hover a truncated cell to read
    its full content. Use **Show only errors** to inspect rejected rows.
@@ -251,9 +255,10 @@ students in four classes. Importing that file twice is intentionally rejected.
 Student IDs are globally unique across all classes and are always stored as
 text, preserving leading zeros present in the CSV. Duplicate comparison trims
 whitespace, normalizes Unicode, and ignores case. Class names use the same
-comparison rules. Names are not unique: two students may share a full name.
-Student IDs allow 80 characters; names and class names allow 200. All three fields
-are required; control characters are rejected. Extra CSV columns are ignored
+comparison rules. Filenames are also globally unique without regard to case. Names
+are not unique: two students may share a full name. Student IDs allow 80 characters;
+names, class names, and filenames allow 200. All four fields are required; control
+characters and Windows-invalid filename characters are rejected. Extra CSV columns are ignored
 after mapping, but rows must match the header's column count. Blank data rows are
 validation errors. Header names must be non-empty and unique.
 
@@ -285,18 +290,19 @@ the whole import. Cancelling the preview makes no changes.
    the resulting local folder. Copy errors are listed and retained in the reports.
 
 Every export creates a new `Export-<timestamp>-<unique-id>` directory. Existing
-exports are never overwritten, so no overwrite confirmation is needed. Filenames
-use sanitized student ID, a hyphen, and student name. If a folder would otherwise
-contain duplicate names, the later files receive ` (2)`, ` (3)` and so on.
-Long display names are shortened; complete names remain in the manifest.
+exports are never overwritten, so no overwrite confirmation is needed. Processed
+filenames use the roster's mapped **Filename** value with `-TR.png` for transparent
+images and `-GR.jpg` for grey-background images. Original files retain the student
+ID and student name naming convention. If a folder would otherwise contain duplicate
+names, the later files receive ` (2)`, ` (3)` and so on. Complete names remain in the manifest.
 Class folders retain a readable name and internal class ID:
 
 ```text
 Export-<timestamp>-<unique-id>/
   Class name--<class-id>/
     Originals/<student-id> - <name>.<source-ext>
-    Transparent/<student-id> - <name>.png
-    Grey Backgrounds/<student-id> - <name>.jpg
+    Transparent/<filename>-TR.png
+    Grey Backgrounds/<filename>-GR.jpg
   manifest.csv
   files.csv
   summary.json
@@ -304,7 +310,7 @@ Export-<timestamp>-<unique-id>/
 
 Only folders needed by the selected options are created. `manifest.csv` has one row
 per scoped student, including excluded students and students without photographs.
-It contains student ID, name, class, selected filename(s), processing status, inclusion,
+It contains student ID, name, class, mapped export filename, selected filename(s), processing status, inclusion,
 exported filenames and errors. Selected filenames only reference successful copies.
 `files.csv` lists each successful copy, its take, selection flag, processing status,
 review flag and SHA-256 hash. `summary.json` records counts and copy errors.
@@ -418,14 +424,15 @@ student CRUD, status changes, filtering, uniqueness, foreign keys, cascade
 deletion, import mapping and validation, duplicate detection, rollback, and Qt
 editor/roster/import interactions. Capture tests cover incomplete/growing images,
 duplicates across restarts, snapshot assignment, reassignment, discard, copy
-collisions, source changes, retry, interrupted-copy recovery, v1 migration, a real
+collisions, source changes, retry, interrupted-copy recovery, schema migrations, class
+ordering and bulk roster deletion, a real
 watchdog observer, pause/resume, worker ownership, thumbnails, and capture controls.
 Processing tests cover all eight EXIF orientations, HSV and cleanup controls, alpha
 and aspect ratio, spill suppression, cache invalidation, output integrity, retries,
 manual review, migration, GUI responsiveness, and stale-result protection. Review
 tests cover final-selection persistence and replacement, flags, filters, assignment
 invalidation, keyboard navigation, and full-resolution image dimensions. Export
-tests cover safe filenames, duplicate names, class structure, missing selections,
+tests cover mapped filenames, safe filenames, duplicate names, class structure, missing selections,
 source changes, read-only database behavior, manifests and background UI flow.
 Qt tests use the offscreen platform and do not
 require a camera. They do not replace testing with a physical workstation's

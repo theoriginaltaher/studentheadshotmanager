@@ -4,13 +4,13 @@ from pathlib import Path
 import sys
 import sqlite3
 
-from PySide6.QtCore import Qt, QTimer, QUrl
+from PySide6.QtCore import QItemSelectionModel, Qt, QTimer, QUrl
 from PySide6.QtGui import QAction, QKeySequence, QDesktopServices, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QButtonGroup, QComboBox, QDialog, QDialogButtonBox,
     QFileDialog, QFrame, QHBoxLayout, QHeaderView, QLabel, QLineEdit,
     QListWidget, QListWidgetItem, QMainWindow, QMessageBox, QPushButton, QSplitter, QStackedWidget,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QStyle, QTableWidget, QTableWidgetItem, QToolButton, QVBoxLayout, QWidget,
 )
 
 from ..database import STATUSES
@@ -40,6 +40,15 @@ def button(text, callback, primary=False):
     widget = QPushButton(text)
     if primary:
         widget.setObjectName("primary")
+    widget.clicked.connect(callback)
+    return widget
+
+
+def icon_button(parent, icon, tooltip, callback):
+    widget = QToolButton()
+    widget.setIcon(parent.style().standardIcon(icon))
+    widget.setToolTip(tooltip)
+    widget.setAccessibleName(tooltip)
     widget.clicked.connect(callback)
     return widget
 
@@ -171,11 +180,25 @@ class MainWindow(QMainWindow):
         class_layout.addWidget(button("New class", self.add_class))
         self.class_list = QListWidget()
         self.class_list.setAccessibleName("Classes, select to filter roster")
+        self.class_list.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.class_list.currentItemChanged.connect(self.refresh_students)
+        self.class_list.itemSelectionChanged.connect(self.update_class_actions)
         class_layout.addWidget(self.class_list, 1)
+        order_actions = QHBoxLayout()
+        order_actions.addWidget(label("Order", "muted"))
+        order_actions.addStretch()
+        self.move_class_up_button = icon_button(
+            self, QStyle.SP_ArrowUp, "Move selected classes up", lambda: self.move_classes(-1)
+        )
+        self.move_class_down_button = icon_button(
+            self, QStyle.SP_ArrowDown, "Move selected classes down", lambda: self.move_classes(1)
+        )
+        order_actions.addWidget(self.move_class_up_button)
+        order_actions.addWidget(self.move_class_down_button)
+        class_layout.addLayout(order_actions)
         class_actions = QHBoxLayout()
         self.edit_class_button = button("Rename", self.edit_class)
-        self.delete_class_button = button("Delete class", self.delete_class)
+        self.delete_class_button = button("Delete", self.delete_class)
         class_actions.addWidget(self.edit_class_button)
         class_actions.addWidget(self.delete_class_button)
         class_layout.addLayout(class_actions)
@@ -189,8 +212,8 @@ class MainWindow(QMainWindow):
         roster_layout.addWidget(self.roster_title)
         filters = QHBoxLayout()
         self.search = QLineEdit()
-        self.search.setPlaceholderText("Search by name or student ID")
-        self.search.setAccessibleName("Search students by name or ID")
+        self.search.setPlaceholderText("Search by name, student ID, or filename")
+        self.search.setAccessibleName("Search students by name, ID, or filename")
         self.search.setClearButtonEnabled(True)
         self.search.textChanged.connect(self.refresh_students)
         self.status_filter = QComboBox()
@@ -205,20 +228,21 @@ class MainWindow(QMainWindow):
         self.counts = label("", "muted")
         self.counts.setWordWrap(True)
         roster_layout.addWidget(self.counts)
-        self.table = QTableWidget(0, 4)
+        self.table = QTableWidget(0, 5)
         self.table.setAccessibleName("Student roster")
-        self.table.setHorizontalHeaderLabels(["Student ID", "Full name", "Class", "Photography status"])
+        self.table.setHorizontalHeaderLabels(["Student ID", "Full name", "Class", "Filename", "Photography status"])
         self.table.verticalHeader().hide()
         self.table.verticalHeader().setDefaultSectionSize(40)
         self.table.setSelectionBehavior(QAbstractItemView.SelectRows)
-        self.table.setSelectionMode(QAbstractItemView.SingleSelection)
+        self.table.setSelectionMode(QAbstractItemView.ExtendedSelection)
         self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
         self.table.setAlternatingRowColors(True)
         self.table.setShowGrid(False)
         self.table.setWordWrap(False)
         self.table.setColumnWidth(0, 120)
         self.table.setColumnWidth(2, 100)
-        self.table.setColumnWidth(3, 160)
+        self.table.setColumnWidth(3, 260)
+        self.table.setColumnWidth(4, 160)
         self.table.horizontalHeader().setSectionResizeMode(1, QHeaderView.Stretch)
         self.table.sortItems(1, Qt.AscendingOrder)
         self.table.itemSelectionChanged.connect(self.update_student_actions)
@@ -232,7 +256,7 @@ class MainWindow(QMainWindow):
         footer.addWidget(self.shown)
         footer.addStretch()
         self.edit_button = button("Edit student", self.edit_student)
-        self.delete_button = button("Delete student", self.delete_student)
+        self.delete_button = button("Delete", self.delete_student)
         footer.addWidget(self.edit_button)
         footer.addWidget(self.delete_button)
         roster_layout.addLayout(footer)
@@ -277,13 +301,27 @@ class MainWindow(QMainWindow):
         item = self.class_list.currentItem()
         return item.data(Qt.UserRole) if item else None
 
-    def selected_student_id(self):
-        row = self.table.currentRow()
-        item = self.table.item(row, 0) if row >= 0 else None
-        return item.data(Qt.UserRole) if item and self.table.selectedItems() else None
+    def selected_class_ids(self):
+        return [item.data(Qt.UserRole) for item in self.class_list.selectedItems()
+                if item.data(Qt.UserRole) is not None]
 
-    def refresh_classes(self, checked=False, select_id=None):
+    def selected_student_id(self):
+        selected = self.selected_student_ids()
+        return selected[0] if len(selected) == 1 else None
+
+    def selected_student_ids(self):
+        ids = []
+        for index in self.table.selectionModel().selectedRows():
+            item = self.table.item(index.row(), 0)
+            if item:
+                ids.append(item.data(Qt.UserRole))
+        return ids
+
+    def refresh_classes(self, checked=False, select_id=None, select_ids=None):
         selected = select_id if select_id is not None else self.current_class_id()
+        selected_ids = set(select_ids if select_ids is not None else self.selected_class_ids())
+        if select_id is not None:
+            selected_ids = {select_id}
         self.class_list.blockSignals(True)
         self.class_list.clear()
         classes = self.db.classes()
@@ -297,18 +335,22 @@ class MainWindow(QMainWindow):
             self.class_list.addItem(item)
             if row["id"] == selected:
                 selected_item = item
+        self.class_list.clearSelection()
         self.class_list.setCurrentItem(selected_item)
+        for index in range(1, self.class_list.count()):
+            item = self.class_list.item(index)
+            if item.data(Qt.UserRole) in selected_ids:
+                item.setSelected(True)
         self.class_list.blockSignals(False)
         self.add_button.setEnabled(bool(classes))
+        self.update_class_actions()
         self.refresh_students()
         if hasattr(self, "capture_page"):
             self.capture_page.refresh_roster()
 
     def refresh_students(self, *args):
-        selected = self.selected_student_id()
+        selected = set(self.selected_student_ids())
         class_id = self.current_class_id()
-        self.edit_class_button.setEnabled(class_id is not None)
-        self.delete_class_button.setEnabled(class_id is not None)
         classes = {row["id"]: row for row in self.db.classes()}
         self.roster_title.setText(classes[class_id]["name"] if class_id in classes else "All students")
         all_rows = self.db.students(class_id)
@@ -318,18 +360,20 @@ class MainWindow(QMainWindow):
         self.table.setRowCount(0)
         self.table.setRowCount(len(rows))
         for i, row in enumerate(rows):
-            for j, field in enumerate(("student_id", "full_name", "class_name", "status")):
+            for j, field in enumerate(("student_id", "full_name", "class_name", "export_filename", "status")):
                 item = QTableWidgetItem(row[field])
                 item.setToolTip(row[field])
                 if j == 0:
                     item.setData(Qt.UserRole, row["id"])
                 self.table.setItem(i, j, item)
         self.table.setSortingEnabled(True)
-        if selected is not None:
+        if selected:
             for i in range(self.table.rowCount()):
-                if self.table.item(i, 0).data(Qt.UserRole) == selected:
-                    self.table.selectRow(i)
-                    break
+                if self.table.item(i, 0).data(Qt.UserRole) in selected:
+                    index = self.table.model().index(i, 0)
+                    self.table.selectionModel().select(
+                        index, QItemSelectionModel.Select | QItemSelectionModel.Rows
+                    )
         self.shown.setText(f"{len(rows):,} of {len(all_rows):,} students")
         if not classes:
             self.empty.setText("Start with New class or Import CSV to build your first roster.")
@@ -341,9 +385,38 @@ class MainWindow(QMainWindow):
         self.update_student_actions()
 
     def update_student_actions(self):
-        enabled = self.selected_student_id() is not None
-        self.edit_button.setEnabled(enabled)
-        self.delete_button.setEnabled(enabled)
+        count = len(self.selected_student_ids())
+        self.edit_button.setEnabled(count == 1)
+        self.delete_button.setEnabled(count > 0)
+        self.delete_button.setText(f"Delete {count} students" if count > 1 else "Delete")
+
+    def update_class_actions(self):
+        selected = set(self.selected_class_ids())
+        ordered = [row["id"] for row in self.db.classes()]
+        positions = [ordered.index(class_id) for class_id in selected if class_id in ordered]
+        self.edit_class_button.setEnabled(len(selected) == 1)
+        self.delete_class_button.setEnabled(bool(selected))
+        self.delete_class_button.setText(f"Delete {len(selected)}" if len(selected) > 1 else "Delete")
+        self.move_class_up_button.setEnabled(bool(positions) and min(positions) > 0)
+        self.move_class_down_button.setEnabled(bool(positions) and max(positions) < len(ordered) - 1)
+
+    def move_classes(self, direction):
+        selected = set(self.selected_class_ids())
+        order = [row["id"] for row in self.db.classes()]
+        if not selected or direction not in (-1, 1):
+            return
+        indexes = range(1, len(order)) if direction < 0 else range(len(order) - 2, -1, -1)
+        for index in indexes:
+            neighbor = index - 1 if direction < 0 else index + 1
+            if order[index] in selected and order[neighbor] not in selected:
+                order[index], order[neighbor] = order[neighbor], order[index]
+        try:
+            self.db.reorder_classes(order)
+        except (ValueError, sqlite3.Error) as exc:
+            QMessageBox.warning(self, "Unable to reorder classes", str(exc))
+        else:
+            self.refresh_classes(select_ids=selected)
+            self.statusBar().showMessage("Class order saved.", 5000)
 
     def add_class(self):
         self.navigate(0)
@@ -372,10 +445,20 @@ class MainWindow(QMainWindow):
         return box.clickedButton() == delete
 
     def delete_class(self):
-        class_id = self.current_class_id()
-        record = next((row for row in self.db.classes() if row["id"] == class_id), None)
-        if record and self.confirm_delete("Delete class", f"Delete {record['name']} and its {record['student_count']} student(s)? This cannot be undone."):
-            self.mutate(lambda: self.db.delete_class(class_id), "Class and its students deleted.")
+        selected = set(self.selected_class_ids())
+        records = [row for row in self.db.classes() if row["id"] in selected]
+        if not records:
+            return
+        students = sum(row["student_count"] for row in records)
+        if len(records) == 1:
+            title = "Delete class"
+            message = f"Delete {records[0]['name']} and its {students} student(s)? This cannot be undone."
+        else:
+            title = "Delete classes"
+            message = f"Delete {len(records)} selected classes and their {students} student(s)? This cannot be undone."
+        if self.confirm_delete(title, message):
+            self.mutate(lambda: self.db.delete_classes([row["id"] for row in records]),
+                        f"Deleted {len(records)} class(es) and {students} student(s).")
 
     def add_student(self):
         self.navigate(0)
@@ -399,10 +482,20 @@ class MainWindow(QMainWindow):
     def delete_student(self):
         if self.pages.currentIndex() != 0:
             return
-        record_id = self.selected_student_id()
-        record = self.db.student(record_id) if record_id is not None else None
-        if record and self.confirm_delete("Delete student", f"Delete {record['full_name']} ({record['student_id']})? This cannot be undone."):
-            self.mutate(lambda: self.db.delete_student(record_id), "Student deleted.")
+        record_ids = self.selected_student_ids()
+        records = [self.db.student(record_id) for record_id in record_ids]
+        records = [record for record in records if record]
+        if not records:
+            return
+        if len(records) == 1:
+            title = "Delete student"
+            message = f"Delete {records[0]['full_name']} ({records[0]['student_id']})? This cannot be undone."
+        else:
+            title = "Delete students"
+            message = f"Delete {len(records)} selected students? Their roster records will be removed. This cannot be undone."
+        if self.confirm_delete(title, message):
+            self.mutate(lambda: self.db.delete_students([record["id"] for record in records]),
+                        f"Deleted {len(records)} student(s).")
 
     def mutate(self, operation, message):
         try:

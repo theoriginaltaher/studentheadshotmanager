@@ -123,7 +123,7 @@ def test_version_three_upgrade_preserves_roster_and_captures(db,processing_captu
     db.connection.executescript('DROP TRIGGER invalidate_final_assignment; DROP TABLE final_portraits; DROP TABLE portrait_flags; PRAGMA user_version=3;')
     reopened=Database(db.path)
     try:
-        assert reopened.connection.execute('PRAGMA user_version').fetchone()[0]==4
+        assert reopened.connection.execute('PRAGMA user_version').fetchone()[0]==6
         assert ReviewRepository(reopened).students()[0]['take_count']==1
         assert CaptureRepository(reopened).get(capture)['processing_status']=='imported'
     finally: reopened.close()

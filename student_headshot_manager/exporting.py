@@ -33,6 +33,11 @@ def student_filename(student_id, name, extension):
     return f"{safe_name(student_id,80)} - {safe_name(name,80)}{suffix.lower()}"
 
 
+def processed_filename(export_filename, kind):
+    suffix = "-TR.png" if kind == "cutout" else "-GR.jpg"
+    return f"{safe_name(export_filename, 200)}{suffix}"
+
+
 def unique_relative(path, used):
     path = Path(path)
     candidate = path
@@ -101,10 +106,13 @@ def build_plan(database, options):
     if options.class_id is None and options.mode in ('All originals','All processed takes','Complete project'):
         for photo in data['captures']:
             if photo['student_record_id'] is None and photo['original_copy_path']:
-                students.append(dict(id='orphan-'+photo['id'], student_id=photo['student_id'],full_name=photo['student_name'],class_id=None,orphan_capture=photo['id']))
+                students.append(dict(id='orphan-'+photo['id'], student_id=photo['student_id'],full_name=photo['student_name'],
+                                     export_filename=f"{photo['student_id']} - {photo['student_name']}",
+                                     class_id=None,orphan_capture=photo['id']))
     for student in students:
         if options.class_id is not None and student['class_id']!=options.class_id: continue
-        sid=student['id']; name=student['full_name']; class_name=classes.get(student['class_id'],'Unassigned (deleted roster)')
+        sid=student['id']; name=student['full_name']; export_filename=student['export_filename']
+        class_name=classes.get(student['class_id'],'Unassigned (deleted roster)')
         photos=[p for p in data['captures'] if (p['id']==student.get('orphan_capture') if 'orphan_capture' in student else p['student_record_id']==sid)]
         final=selected.get(sid); issues=[]; available={}
         if not final: issues.append('No selected portrait')
@@ -140,7 +148,8 @@ def build_plan(database, options):
             if flags.get(final): issues.append('Selected take is flagged: '+flags[final])
         incomplete=bool(issues)
         included=not incomplete or options.include_incomplete
-        row={'record_id':sid,'student_id':student['student_id'],'student_name':name,'class':class_name,
+        row={'record_id':sid,'student_id':student['student_id'],'student_name':name,
+             'export_filename':export_filename,'class':class_name,
              'selected_filename':'','processing_status':'; '.join(issues) if issues else 'Selected processing approved',
              'included':included,'files':[],'errors':[]}
         plan.students.append(row)
@@ -157,8 +166,10 @@ def build_plan(database, options):
             for key in keys:
                 if key not in assets: continue
                 source,sha=assets[key]; folder={'original':'Originals','cutout':'Transparent','portrait':'Grey Backgrounds'}[key]
-                extension = Path(source).suffix if key == 'original' else ('.png' if key == 'cutout' else '.jpg')
-                filename=student_filename(student['student_id'],name,extension)
+                if key == 'original':
+                    filename=student_filename(student['student_id'],name,Path(source).suffix)
+                else:
+                    filename=processed_filename(export_filename,key)
                 relative=unique_relative(Path(class_folder)/folder/filename,used_paths)
                 job=jobs.get(cid)
                 status=photo['processing_status'] if key=='original' else job['status']
@@ -205,21 +216,21 @@ def execute_export(database, plan, destination, progress=lambda done,total,messa
     try:
         # Only successfully copied selected outputs appear as selected filenames.
         with (target/'manifest.csv').open('x',newline='',encoding='utf-8-sig') as output:
-            writer=csv.DictWriter(output,fieldnames=['student_id','student_name','class','selected_filename','processing_status','included','exported_files','errors'])
+            writer=csv.DictWriter(output,fieldnames=['student_id','student_name','class','export_filename','selected_filename','processing_status','included','exported_files','errors'])
             writer.writeheader()
             for sid,row in rows.items():
                 successful=[item for item in copied if item['record_id']==sid]
-                writer.writerow({key:row[key] for key in ('student_id','student_name','class','processing_status','included')} |
+                writer.writerow({key:row[key] for key in ('student_id','student_name','class','export_filename','processing_status','included')} |
                     {'selected_filename':'; '.join(i['relative'] for i in successful if i['selected'] and i['kind']!='original'),
                      'exported_files':'; '.join(i['relative'] for i in successful),'errors':'; '.join(row['errors'])})
         summary={'destination':str(target),'copied':len(copied),'planned':len(plan.files),'errors':errors,
                  'included_students':sum(row['included'] for row in plan.students),'excluded_students':sum(not row['included'] for row in plan.students)}
         with (target/'files.csv').open('x',newline='',encoding='utf-8-sig') as output:
-            fields=['student_id','student_name','class','filename','capture_id','selected','processing_status','review_flag','sha256']
+            fields=['student_id','student_name','class','export_filename','filename','capture_id','selected','processing_status','review_flag','sha256']
             writer=csv.DictWriter(output,fieldnames=fields); writer.writeheader()
             for item in copied:
                 row=rows[item['record_id']]
-                writer.writerow({key:row[key] for key in ('student_id','student_name','class')} |
+                writer.writerow({key:row[key] for key in ('student_id','student_name','class','export_filename')} |
                     {key:item[key] for key in ('capture_id','selected','processing_status','review_flag','sha256')} | {'filename':item['relative']})
         with (target/'summary.json').open('x',encoding='utf-8') as output:
             json.dump(summary,output,indent=2)

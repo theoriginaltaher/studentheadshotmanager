@@ -11,7 +11,7 @@ import sqlite3
 import sys
 import uuid
 
-VERSION='1.1.0'
+VERSION='1.2.0'
 _crash_file=None
 
 
@@ -46,7 +46,7 @@ def check_backup(path):
         if source.execute('PRAGMA quick_check').fetchone()[0]!='ok':raise ValueError('SQLite integrity check failed.')
         tables={row[0] for row in source.execute("SELECT name FROM sqlite_master WHERE type='table'")}
         if not {'students','classes'}.issubset(tables):raise ValueError('This is not a Student Headshot Manager roster.')
-        if source.execute('PRAGMA user_version').fetchone()[0]>4:raise ValueError('This backup requires a newer application.')
+        if source.execute('PRAGMA user_version').fetchone()[0]>6:raise ValueError('This backup requires a newer application.')
     finally:source.close()
 
 
@@ -75,7 +75,7 @@ def startup_backup(database):
     today=datetime.now(timezone.utc).strftime('%Y%m%d')
     with closing(sqlite3.connect(path.resolve().as_uri()+'?mode=ro',uri=True)) as source:
         version=source.execute('PRAGMA user_version').fetchone()[0]
-    if version<4 or not folder.exists() or not list(folder.glob(f'roster-{today}-*.sqlite3')):
+    if version<6 or not folder.exists() or not list(folder.glob(f'roster-{today}-*.sqlite3')):
         return backup_database(path)
     return None
 

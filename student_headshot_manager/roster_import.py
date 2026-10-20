@@ -4,9 +4,9 @@ import csv
 from dataclasses import dataclass
 from pathlib import Path
 
-from .database import Database, clean, identity
+from .database import Database, clean, clean_filename, identity
 
-FIELDS = ("Student ID", "Full name", "Class")
+FIELDS = ("Student ID", "Full name", "Class", "Filename")
 MAX_ROWS = 20000
 MAX_BYTES = 10 * 1024 * 1024
 
@@ -23,6 +23,7 @@ class PreviewRow:
     student_id: str
     full_name: str
     class_name: str
+    export_filename: str
     errors: tuple[str, ...]
 
 
@@ -55,9 +56,10 @@ def read_csv(path: str | Path) -> CsvData:
 
 def suggest_mapping(data: CsvData) -> dict[str, int | None]:
     aliases = {
-        "Student ID": {"student id", "student_id", "id", "student number"},
+        "Student ID": {"student id", "student_id", "id", "student number", "adm.no", "adm no", "admission no"},
         "Full name": {"full name", "full_name", "name", "student name"},
         "Class": {"class", "class name", "class_name", "grade"},
+        "Filename": {"filename", "file name", "export filename", "export_filename"},
     }
     return {field: next((i for i, h in enumerate(data.headers) if identity(h) in names), None)
             for field, names in aliases.items()}
@@ -70,10 +72,14 @@ def validate(data: CsvData, mapping: dict, db: Database) -> list[PreviewRow]:
     if len(set(indexes)) != len(FIELDS):
         raise ValueError("Use a different CSV column for each field.")
     existing = db.student_keys()
+    existing_filenames = db.filename_keys()
     counts = {}
+    filename_counts = {}
     for row in data.rows:
         key = identity(row[indexes[0]]) if indexes[0] < len(row) else ""
         counts[key] = counts.get(key, 0) + 1
+        filename_key = identity(row[indexes[3]]) if indexes[3] < len(row) else ""
+        filename_counts[filename_key] = filename_counts.get(filename_key, 0) + 1
     result = []
     for line, row in enumerate(data.rows, start=2):
         values = [row[i].strip() if i < len(row) else "" for i in indexes]
@@ -82,7 +88,7 @@ def validate(data: CsvData, mapping: dict, db: Database) -> list[PreviewRow]:
             errors.append(f"Expected {len(data.headers)} columns; found {len(row)}.")
         for value, field in zip(values, FIELDS):
             try:
-                clean(value, field, 80 if field == "Student ID" else 200)
+                clean_filename(value) if field == "Filename" else clean(value, field, 80 if field == "Student ID" else 200)
             except ValueError as exc:
                 errors.append(str(exc))
         key = identity(values[0])
@@ -90,6 +96,11 @@ def validate(data: CsvData, mapping: dict, db: Database) -> list[PreviewRow]:
             errors.append("Student ID already exists in the roster.")
         if key and counts[key] > 1:
             errors.append("Student ID is repeated in this CSV.")
+        filename_key = identity(values[3])
+        if filename_key in existing_filenames:
+            errors.append("Filename already exists in the roster.")
+        if filename_key and filename_counts[filename_key] > 1:
+            errors.append("Filename is repeated in this CSV.")
         result.append(PreviewRow(line, *values, tuple(errors)))
     return result
 
@@ -107,5 +118,5 @@ def import_csv(data: CsvData, mapping: dict, db: Database) -> int:
             key = identity(row.class_name)
             if key not in classes:
                 classes[key] = db.create_class(row.class_name)
-            db.save_student(row.student_id, row.full_name, classes[key])
+            db.save_student(row.student_id, row.full_name, classes[key], export_filename=row.export_filename)
     return len(rows)

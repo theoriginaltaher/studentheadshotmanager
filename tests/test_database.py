@@ -16,7 +16,7 @@ def test_schema_initialization_is_repeatable_and_persistent(tmp_path):
     assert reopened.student(student_id)["status"] == "Captured"
     assert reopened.classes()[0]["student_count"] == 1
     assert reopened.connection.execute("PRAGMA foreign_keys").fetchone()[0] == 1
-    assert reopened.connection.execute("PRAGMA user_version").fetchone()[0] == 4
+    assert reopened.connection.execute("PRAGMA user_version").fetchone()[0] == 6
     reopened.close()
 
 
@@ -30,6 +30,23 @@ def test_class_crud_and_cascade_only_selected_class(db):
     db.delete_class(first)
     assert [row["id"] for row in db.students()] == [survivor]
     assert len(db.classes()) == 1
+
+
+def test_class_order_and_bulk_deletes(db):
+    first = db.create_class("A")
+    second = db.create_class("B")
+    third = db.create_class("C")
+    one = db.save_student("1", "One", first)
+    two = db.save_student("2", "Two", first)
+    db.save_student("3", "Three", second)
+    db.reorder_classes([third, first, second])
+    assert [row["id"] for row in db.classes()] == [third, first, second]
+    with pytest.raises(ValueError, match="stale"):
+        db.reorder_classes([first, second])
+    db.delete_students([one, two])
+    assert not db.students(first)
+    db.delete_classes([first, second])
+    assert [row["id"] for row in db.classes()] == [third]
 
 
 def test_student_crud_move_and_all_statuses(db):
@@ -84,9 +101,20 @@ def test_foreign_key_and_status_constraints(db):
     for foreign, status in [(999, "Captured"), (class_id, "invalid")]:
         with pytest.raises(sqlite3.IntegrityError), db.transaction():
             db.connection.execute(
-                "INSERT INTO students(student_id, student_key, full_name, class_id, status) VALUES (?, ?, ?, ?, ?)",
-                ("1", "1", "Name", foreign, status),
+                """INSERT INTO students(student_id,student_key,full_name,export_filename,filename_key,class_id,status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                ("1", "1", "Name", "FILE", "file", foreign, status),
             )
+
+
+def test_filename_is_validated_unique_and_searchable(db):
+    class_id = db.create_class("A")
+    record = db.save_student("1", "Name", class_id, export_filename="1_A_NAME")
+    assert db.students(search="a_name")[0]["id"] == record
+    with pytest.raises(ValueError, match="filename already exists"):
+        db.save_student("2", "Other", class_id, export_filename="1_a_name")
+    with pytest.raises(ValueError, match="cannot contain"):
+        db.save_student("2", "Other", class_id, export_filename="bad/name")
 
 
 def test_filters_and_literal_search(db):

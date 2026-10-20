@@ -349,7 +349,8 @@ def test_v1_migration_preserves_roster(tmp_path):
         assert upgraded.students()[0]["student_id"] == "001"
         assert upgraded.students()[0]["status"] == "Complete"
         assert upgraded.classes()[0]["name"] == "Legacy"
-        assert upgraded.connection.execute("PRAGMA user_version").fetchone()[0] == 4
+        assert upgraded.connection.execute("PRAGMA user_version").fetchone()[0] == 6
+        assert upgraded.students()[0]["export_filename"] == "001 - Existing Student"
         assert CaptureRepository(upgraded).photos() == []
     finally:
         upgraded.close()
