@@ -23,13 +23,13 @@ StudentHeadshotManager; do not move the EXE away from its _internal directory.
 Portable mode still uses per-user AppData for the live database and defaults.
 
 The database, backups and logs live under `%LOCALAPPDATA%\StudentHeadshotManager`.
-Initial photo folders are under its `Photos` directory and can be changed in Capture.
+Initial photo folders are under its `Photos` directory and can be changed in Assign.
 No live data is placed under Program Files. Upgrades retain existing data and folder
 settings. Uninstall preserves all user records, backups and photographs.
 
-For Nikon D5500 USB setup and current software availability, read
-[CAMERA_SETUP.md](CAMERA_SETUP.md). This application supports folder monitoring;
-physical-camera shutter, live view and automatic transfer have not been tested.
+For the Nikon D5500 card workflow and current software availability, read
+[CAMERA_SETUP.md](CAMERA_SETUP.md). Physical-camera shutter, live view, and automatic
+USB transfer are outside the application.
 
 ## Development and repeatable builds
 
@@ -57,37 +57,26 @@ python -m venv .venv
 - Import CSV files through column mapping and a row-by-row validation preview.
 - Changes save immediately to SQLite and survive restarting the application.
 
-Capture receives JPEG and Canon RAW (`.cr2`, `.cr3`) files from an Incoming folder with explicit assignment review.
+Assign imports JPEG and Canon/Nikon RAW (`.cr2`, `.cr3`, `.nef`) batches from an SD card or local folder with explicit assignment review.
 Review provides local green-screen removal and portrait compositing. The Export manager supports class and project deliveries. Direct camera
 control remains unimplemented. Archived originals are
 byte-for-byte copies.
 
-## Incoming-image capture
+## Import and assign a photo batch
 
-1. Open **Capture** and choose **Configure folders**. Incoming must already exist.
-   Select separate Incoming, Originals, Processed, and Export folders. None may
-   contain another. Output directories are created and checked for write access;
-   no test file is created in Incoming. Processed stores image outputs; Export is the default delivery destination.
-2. Create or choose a **capture session**, then explicitly choose a **student**.
-   New photographs and roster refreshes do not advance the student selection.
-   Deleting the active student clears the selection and pauses monitoring.
-3. Click **Resume watcher**. The indicator reports Watching, Paused, or Disconnected
-   with the reason. Use your transfer software to place images in Incoming.
-   Only top-level `.jpg`, `.jpeg`, `.cr2`, and `.cr3` files are watched, case-insensitively.
-   Subdirectories, symlinks, and other formats are ignored.
-4. Inspect each thumbnail, **Student assignment**, and status. The proposed student
-   and session are frozen at first detection, before the file settles. Changing
-   the active student affects future detections only. Select a row to see its source
-   path, identity, capture time, and any error. Nothing is accepted automatically.
-5. Use **Confirm assignment** to accept and archive the photograph, **Reassign image**
-   to choose a different student, **Discard assignment** to retain the original but
-   discard its assignment, or **Retry import** after fixing a transfer/storage problem.
-   Reassignment requires confirmation again. Discarded records can be reassigned.
+1. Open **Assign** and choose **Configure storage**. Select separate Incoming,
+   Originals, Processed, and Export folders. None may contain another.
+2. Create or choose a batch for the class or shooting period.
+3. Insert the SD card and choose **Import card folder**, or choose **Import photos**
+   for selected files. JPEG, CR2, CR3, and NEF files are copied into managed Incoming
+   storage before the card is removed.
+4. Select one or more photographs on the left. Search or filter the roster on the
+   right, select the student shown, and choose **Assign selected**.
+5. Inspect the thumbnails and assignments, then choose **Confirm selected assignments**
+   to archive immutable originals. Use **Discard** or **Retry** when appropriate.
 
-The table shows all photographs in the chosen session, with an optional **Only
-active student** filter. Counts show unique received photographs for that student
-and session, including accepted, failed, and discarded counts. Duplicate deliveries
-are shown explicitly but excluded from the received count. Accepting a photograph
+The photo list shows the selected batch and can be filtered by assignment state.
+Duplicate deliveries are shown explicitly but excluded from received counts. Confirming a photograph
 changes Not photographed to Captured; later/manual roster statuses are preserved.
 Discarding/reassigning does not reset the manually editable roster status.
 
@@ -177,14 +166,18 @@ also opens full resolution. These shortcuts apply only inside Students & takes.
 
 ## Local green-screen processing
 
-1. Confirm an assignment in **Capture**, then open **Review → Processing tools** and select the photograph.
+1. Confirm assignments in **Assign**, then open **Review → Processing tools**.
 2. Click **Even green screen preset** for a starting point, or adjust the settings.
-3. Click **Process locally**. Processing runs in a background queue using the archived
+3. Choose **Process all assigned** for the batch, or **Process locally** for one photograph.
+   Processing runs in a background queue using the archived
    original. No images are uploaded and no cloud service or downloaded model is used.
-4. Inspect **Before / after**, **Mask**, and **Cutout**. Mouse-wheel zoom and drag-to-pan
-   work in each view; **Fit** and **100%** provide explicit zoom controls. Before/after
-   and cutout previews are capped at 2048 pixels for display; the mask is full resolution.
-5. **Approve result** only after inspection, or **Flag manual review** with a note.
+4. Inspect **Results** and **Edit mask**. Paint with Keep or Remove at full mask
+   resolution, then apply the edits to rebuild the cutout and portrait.
+5. In **Position and size**, drag the portrait to move it and drag its lower-right
+   handle to resize it. Reprocess after layout changes.
+6. Set the background with RGB, Hex, or HSL values. The default delivery is a
+   1080 × 1080 square JPEG at 300 DPI.
+7. **Approve result** only after inspection, or **Flag manual review** with a note.
    Changing settings clears stale result previews until processing runs again.
    **Open output folder** opens the saved local files.
 
@@ -197,8 +190,9 @@ The preset is a starting point for evenly lit green screens, not a quality guara
 
 EXIF orientation is applied to the full-resolution source pixels. The transparent
 RGBA PNG and grayscale mask retain those upright dimensions. The portrait uniformly
-fits the full frame inside the chosen canvas and padding, over the selected grey
-value; it neither stretches nor crops the subject. PNG/JPEG output orientation is
+fits the full frame inside the chosen canvas and padding, then applies the selected
+scale and position over the chosen background color. It does not stretch the subject.
+PNG/JPEG output orientation is
 normalized to 1. ICC profiles are retained; other original EXIF metadata is not
 copied in full. Original files remain unchanged. Processing explicitly rejects
 sources over 250 MB or 40 million decoded pixels instead of silently reducing resolution.

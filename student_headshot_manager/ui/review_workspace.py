@@ -136,7 +136,7 @@ class TakeBrowser(QWidget):
         self.grid.blockSignals(False)
         final=any(row['selected'] for row in takes)
         self.summary.setText('No students match these filters.' if student is None else
-            'No images. Receive photographs in Capture.' if not takes else
+            'No images. Import and assign photographs first.' if not takes else
             f"{len(takes)} takes · {'Final portrait selected' if final else 'Unreviewed images · no final selection'}")
         self.previous.setEnabled(self.students.currentRow()>0)
         self.next.setEnabled(0<=self.students.currentRow()<self.students.count()-1)
@@ -153,7 +153,7 @@ class TakeBrowser(QWidget):
         if accepted:
             self.message.setText('Loading local previews…')
             self.processor.controller.command('take_preview',self.token,take['id'])
-        else: self.message.setText('Confirm the assignment in Capture to preview this take.' if take else 'Choose a student with photographs.')
+        else: self.message.setText('Confirm the assignment to preview this take.' if take else 'Choose a student with photographs.')
 
     def on_done(self,action,token,success,payload):
         if action == 'worker':

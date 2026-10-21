@@ -304,10 +304,11 @@ def test_no_implicit_student_and_non_jpeg_ignored(capture_setup):
     assert repo.photos() == []
 
 
-def test_raw_files_are_detected_and_archived_with_original_extension(capture_setup, monkeypatch):
+@pytest.mark.parametrize("extension", ("CR3", "NEF"))
+def test_raw_files_are_detected_and_archived_with_original_extension(capture_setup, monkeypatch, extension):
     import student_headshot_manager.ingestion as ingestion
     repo, engine, clock, folders, first, _ = capture_setup
-    path = Path(folders.incoming) / "raw.CR3"
+    path = Path(folders.incoming) / f"raw.{extension}"
     path.write_bytes(b"raw-camera-bytes")
     monkeypatch.setattr(ingestion, "inspect_raw", lambda source: jpeg_bytes("green"))
     assert engine.discover(path, first)
@@ -317,7 +318,7 @@ def test_raw_files_are_detected_and_archived_with_original_extension(capture_set
     assert row["processing_status"] == "awaiting_confirmation"
     engine.accept(row["id"])
     archived = Path(repo.get(row["id"])["original_copy_path"])
-    assert archived.suffix == ".cr3"
+    assert archived.suffix == f".{extension.lower()}"
     assert archived.read_bytes() == path.read_bytes()
 
 

@@ -92,15 +92,25 @@ class Database:
             with self.transaction():
                 self.connection.execute("ALTER TABLE students ADD COLUMN export_filename TEXT")
                 self.connection.execute("ALTER TABLE students ADD COLUMN filename_key TEXT")
+                used = set()
                 for row in self.connection.execute("SELECT id,student_id,full_name FROM students").fetchall():
-                    filename = default_filename(row["student_id"], row["full_name"])
+                    base = default_filename(row["student_id"], row["full_name"])
+                    filename = base
+                    if identity(filename) in used:
+                        suffix = f"-{row['id']}"
+                        filename = base[:200 - len(suffix)].rstrip(" .") + suffix
+                    used.add(identity(filename))
                     self.connection.execute(
                         "UPDATE students SET export_filename=?,filename_key=? WHERE id=?",
                         (filename, identity(filename), row["id"]),
                     )
-        self.connection.execute(
-            "CREATE UNIQUE INDEX IF NOT EXISTS students_filename ON students(filename_key)"
-        )
+                self.connection.execute(
+                    "CREATE UNIQUE INDEX IF NOT EXISTS students_filename ON students(filename_key)"
+                )
+        else:
+            self.connection.execute(
+                "CREATE UNIQUE INDEX IF NOT EXISTS students_filename ON students(filename_key)"
+            )
         if self.connection.execute("PRAGMA user_version").fetchone()[0] < 5:
             self.connection.execute("PRAGMA user_version = 5")
 

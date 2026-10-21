@@ -2,6 +2,7 @@ from pathlib import Path
 import time
 
 from PIL import Image
+from PySide6.QtCore import Qt
 
 from student_headshot_manager.capture_repository import CaptureRepository
 from student_headshot_manager.folders import Folders
@@ -34,45 +35,39 @@ def test_capture_selection_thumbnail_counts_and_confirm(qapp, db, tmp_path):
     window = MainWindow(db)
     panel = window.capture_page
     try:
-        assert panel.students.currentData() is None
-        assert not panel.watch_button.isEnabled()
         panel.refresh_sessions(session)
-        panel.students.setCurrentIndex(panel.students.findData(first))
-        for student, color in ((first, "red"), (second, "blue")):
-            path = Path(folders.incoming) / f"{student}.jpg"
+        for index, color in enumerate(("red", "blue"), start=1):
+            path = Path(folders.incoming) / f"{index}.jpg"
             Image.new("RGB", (100, 70), color).save(path)
-            engine.discover(path, repo.assignment(student, session))
+            engine.discover(path, repo.unassigned(session))
         clock[0] = 3
         engine.tick()
         panel.refresh_photos()
         assert panel.table.rowCount() == 2
         assert not panel.table.item(0, 0).icon().isNull()
-        assert panel.students.currentData() == first
         window.refresh_classes()
-        assert panel.students.currentData() == first
-        assert "1 received" in panel.count_label.text()
+        assert "2 unassigned" in panel.photo_count.text()
         panel.table.selectRow(0)
-        assert "Second Student" in panel.detail.text()
-        assert panel.students.currentData() == first
+        student_row = next(row for row in range(panel.student_table.rowCount())
+                           if panel.student_table.item(row, 0).data(Qt.UserRole) == first)
+        panel.student_table.selectRow(student_row)
+        assert panel.assign_button.isEnabled()
+        photo_id = panel.selected_photo_ids()[0]
+        panel.assign_selected()
+        wait_for(qapp, lambda: repo.get(photo_id)["student_record_id"] == first and not panel.busy)
+        panel.table.selectRow(next(row for row in range(panel.table.rowCount())
+                                   if panel.table.item(row, 0).data(Qt.UserRole) == photo_id))
         assert panel.confirm_button.isEnabled()
-        panel.only_active.setChecked(True)
-        assert panel.table.rowCount() == 1
-        panel.table.selectRow(0)
-        assert "First Student (001)" in panel.detail.text()
-        photo_id = panel.selected_photo()["id"]
-        panel.photo_command("confirm")
+        panel.confirm_selected()
         assert not panel.confirm_button.isEnabled()
         wait_for(qapp, lambda: repo.get(photo_id)["processing_status"] == "imported" and not panel.busy)
-        assert "1 accepted" in panel.count_label.text()
-        assert panel.students.currentData() == first
+        assert "1 archived" in panel.photo_count.text()
         assert not panel.confirm_button.isEnabled()
-        assert panel.reassign_button.isEnabled()
         assert panel.discard_button.isEnabled()
         assert not panel.retry_button.isEnabled()
         db.delete_student(first)
         window.refresh_classes()
-        assert panel.students.currentData() is None
-        assert not panel.watch_button.isEnabled()
+        assert panel.selected_student_id() != first
     finally:
         panel.controller.stop()
         wait_for(qapp, lambda: not panel.controller.is_running())
@@ -90,10 +85,9 @@ def test_capture_failure_is_visible_with_retry_control(qapp, db, tmp_path):
     window = MainWindow(db)
     panel = window.capture_page
     panel.refresh_sessions(session)
-    panel.students.setCurrentIndex(panel.students.findData(student))
     panel.table.selectRow(0)
     assert "incomplete" in panel.detail.text()
     assert panel.retry_button.isEnabled()
     assert not panel.confirm_button.isEnabled()
-    assert "1 failed" in panel.count_label.text()
+    assert "1 photos" in panel.photo_count.text()
     window.close()

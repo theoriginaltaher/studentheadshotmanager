@@ -117,6 +117,32 @@ def test_filename_is_validated_unique_and_searchable(db):
         db.save_student("2", "Other", class_id, export_filename="bad/name")
 
 
+def test_legacy_filename_migration_resolves_sanitized_collisions(tmp_path):
+    path = tmp_path / "legacy.sqlite3"
+    connection = sqlite3.connect(path)
+    connection.executescript("""
+        CREATE TABLE classes (id INTEGER PRIMARY KEY,name TEXT NOT NULL,name_key TEXT NOT NULL UNIQUE);
+        CREATE TABLE students (
+            id INTEGER PRIMARY KEY,student_id TEXT NOT NULL,student_key TEXT NOT NULL UNIQUE,
+            full_name TEXT NOT NULL,class_id INTEGER NOT NULL REFERENCES classes(id) ON DELETE CASCADE,
+            status TEXT NOT NULL DEFAULT 'Not photographed',created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        INSERT INTO classes(id,name,name_key) VALUES (1,'A','a');
+        INSERT INTO students(student_id,student_key,full_name,class_id) VALUES ('A/B','a/b','Same Name',1);
+        INSERT INTO students(student_id,student_key,full_name,class_id) VALUES ('A\\B','a\\b','Same Name',1);
+        PRAGMA user_version=4;
+    """)
+    connection.close()
+    upgraded = Database(path)
+    try:
+        rows = upgraded.students()
+        assert len({row["filename_key"] for row in rows}) == 2
+        assert upgraded.connection.execute("PRAGMA user_version").fetchone()[0] == 6
+    finally:
+        upgraded.close()
+
+
 def test_filters_and_literal_search(db):
     a, b = db.create_class("A"), db.create_class("B")
     db.save_student("0001", "Mía Jones", a, "Complete")

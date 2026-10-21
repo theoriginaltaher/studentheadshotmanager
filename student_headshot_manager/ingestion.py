@@ -15,7 +15,7 @@ import warnings
 from PIL import Image, ImageOps
 
 JPEG_EXTENSIONS = {".jpg", ".jpeg"}
-RAW_EXTENSIONS = {".cr2", ".cr3"}
+RAW_EXTENSIONS = {".cr2", ".cr3", ".nef"}
 IMAGE_EXTENSIONS = JPEG_EXTENSIONS | RAW_EXTENSIONS
 MAX_IMAGE_BYTES = 250 * 1024 * 1024
 
@@ -88,7 +88,7 @@ def inspect_image(path, expected_signature):
     elif suffix in RAW_EXTENSIONS:
         thumbnail = inspect_raw(path)
     else:
-        raise ValueError("Only JPEG, CR2, and CR3 images are supported.")
+        raise ValueError("Only JPEG, CR2, CR3, and NEF images are supported.")
     if file_signature(path) != before:
         raise ValueError("File changed during image validation.")
     captured = datetime.fromtimestamp(before[1] / 1e9, timezone.utc).isoformat()

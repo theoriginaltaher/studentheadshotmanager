@@ -104,6 +104,29 @@ class ProcessingController(QObject):
                             original = (data, source)
                             cached = row is not None
                         payload = preview_payload(row, original, cached)
+                    elif action == "process_batch":
+                        capture_ids, values = args
+                        settings = ProcessingSettings(**values).validate()
+                        completed = []
+                        failures = []
+                        last_result = None
+                        for index, capture_id in enumerate(capture_ids, start=1):
+                            self.progress.emit(token, f"Processing {index:,} of {len(capture_ids):,} photographs…")
+                            try:
+                                row, cached, original = service.process(capture_id, settings)
+                                completed.append(capture_id)
+                                last_result = (row, cached, original)
+                            except Exception as exc:
+                                failures.append({"capture_id": capture_id, "error": str(exc)})
+                        payload = {"completed": completed, "failures": failures}
+                        if last_result:
+                            row, cached, original = last_result
+                            payload.update(preview_payload(row, original, cached))
+                    elif action == "apply_mask":
+                        job_id, mask_data = args
+                        row, original = service.apply_mask(
+                            job_id, mask_data, lambda message: self.progress.emit(token, message))
+                        payload = preview_payload(row, original, False)
                     elif action in ("take_preview", "take_full"):
                         capture_id = args[0]
                         latest = service.repo.latest(capture_id)

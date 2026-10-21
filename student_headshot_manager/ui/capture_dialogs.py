@@ -10,12 +10,12 @@ class FolderDialog(QDialog):
     def __init__(self, controller, values, parent=None):
         super().__init__(parent)
         self.controller = controller
-        self.setWindowTitle("Capture folders")
+        self.setWindowTitle("Photo storage folders")
         self.setMinimumWidth(660)
         layout = QVBoxLayout(self)
         layout.setContentsMargins(24, 24, 24, 24)
-        note = QLabel("Choose four separate folders. Incoming is read only to this application. "
-                      "Processed and Export are reserved for later stages.")
+        note = QLabel("Choose four separate folders. Imported card files are copied into Incoming; "
+                      "archived originals are preserved, and Processed and Export store generated files.")
         note.setWordWrap(True)
         layout.addWidget(note)
         form = QFormLayout()

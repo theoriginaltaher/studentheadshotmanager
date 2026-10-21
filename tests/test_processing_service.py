@@ -1,4 +1,5 @@
 from dataclasses import replace
+import io
 import json
 from pathlib import Path
 import socket
@@ -39,10 +40,27 @@ def test_saves_png_jpeg_mask_and_never_uses_network(db, processing_capture, monk
     with Image.open(outputs["portrait"]["path"]) as portrait:
         assert portrait.format == "JPEG" and portrait.size == (120, 160)
         assert portrait.getpixel((0, 0)) == (180, 180, 180)
+        assert portrait.info["dpi"][0] == pytest.approx(300, abs=1)
     with Image.open(outputs["mask"]["path"]) as mask:
         assert mask.mode == "L" and mask.size == (120, 160)
     assert original.read_bytes() == before and incoming.read_bytes() == incoming_before
     assert original.stat().st_mtime_ns == modified
+
+
+def test_manual_mask_creates_a_new_reviewable_result(db, processing_capture):
+    capture_id, *_ = processing_capture
+    service = ProcessingService(db)
+    first, _, _ = service.process(capture_id, settings())
+    outputs = json.loads(first["outputs_json"])
+    with Image.open(outputs["mask"]["path"]) as source:
+        mask = source.convert("L")
+    mask.paste(255, (0, 0, 12, 12))
+    encoded = io.BytesIO()
+    mask.save(encoded, "PNG")
+    edited, _ = service.apply_mask(first["id"], encoded.getvalue())
+    assert edited["id"] != first["id"] and edited["status"] in ("awaiting_review", "needs_review")
+    assert json.loads(edited["diagnostics_json"])["manual_mask"]
+    assert service.outputs_valid(edited)
 
 
 def test_cache_hits_without_rerunning_pipeline_and_survives_restart(db, processing_capture, monkeypatch):

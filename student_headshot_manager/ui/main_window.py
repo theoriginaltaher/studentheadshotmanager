@@ -75,7 +75,7 @@ class MainWindow(QMainWindow):
         nav_layout.addSpacing(28)
         self.pages = QStackedWidget()
         self.nav_group = QButtonGroup(self)
-        for index, title in enumerate(("Classes", "Capture", "Review", "Export")):
+        for index, title in enumerate(("Classes", "Assign", "Review", "Export")):
             nav = QPushButton(title)
             nav.setObjectName("nav")
             nav.setCheckable(True)
@@ -84,7 +84,7 @@ class MainWindow(QMainWindow):
         self.nav_group.button(0).setChecked(True)
         self.nav_group.idClicked.connect(self.pages.setCurrentIndex)
         nav_layout.addStretch()
-        nav_layout.addWidget(label("Roster & capture\nLocal workspace", "muted"))
+        nav_layout.addWidget(label("Roster & headshots\nLocal workspace", "muted"))
         outer.addWidget(sidebar)
         outer.addWidget(self.pages, 1)
         self.pages.addWidget(self.build_roster())
@@ -128,10 +128,10 @@ class MainWindow(QMainWindow):
         title.setTextFormat(Qt.RichText)
         layout.addWidget(title)
         details=QLabel(
-            "Local folder-watching photography workstation<br><br>"
+            "Local batch headshot assignment and processing workstation<br><br>"
             f"Author: {AUTHOR}<br>"
             f"<a href=\"{BYTHC_URL}\">#ByTHC</a><br><br>"
-            "Nikon D5500 shutter, live view and automatic USB transfer have not been tested. "
+            "Import JPEG or supported RAW photographs from an SD card or local folder. "
             "See CAMERA_SETUP and the user guide. Logs and backups stay in your user data folder."
         )
         details.setTextFormat(Qt.RichText)

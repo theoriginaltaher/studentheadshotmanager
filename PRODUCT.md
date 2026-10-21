@@ -6,8 +6,8 @@ product
 
 ## Users and purpose
 
-School photography workstation operators maintain class rosters before capture.
-The application provides persistent rosters, validated CSV imports with mapped delivery filenames, and incoming JPEG/Canon RAW ingestion with explicit student/session assignment, plus local green-screen processing operator review, and explicit class/project exports.
+School photography workstation operators maintain class rosters and assign batches of headshots after a photo session.
+The application provides persistent rosters, validated CSV imports with mapped delivery filenames, JPEG and Canon/Nikon RAW ingestion with explicit student/session assignment, local green-screen processing and mask/layout review, and explicit class/project exports.
 
 ## Design principles
 
@@ -18,7 +18,7 @@ The application provides persistent rosters, validated CSV imports with mapped d
 - Keep direct camera control outside this stage.
 - Prepare export reports before copying, preserve originals and never overwrite deliveries.
 - Process photographs locally and require explicit human review of results.
-- Preserve incoming originals and show proposed assignments before accepting copies.
+- Copy card imports into managed storage, preserve originals, and show assignments before accepting them.
 
 ## Accessibility
 

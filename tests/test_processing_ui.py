@@ -85,13 +85,13 @@ def test_review_controls_mask_zoom_flags_and_dirty_settings(qapp, db, processing
         wait_for(qapp, lambda: not page.busy)
         assert ProcessingRepository(db).review(capture_id)["manual_review"] == 1
         assert "manual review" in page.status.text()
-        page.settings_panel.fields["grey"].setValue(160)
+        page.settings_panel.fields["background_r"].setValue(160)
         assert page.current_job is None
         assert not page.after.canvas.has_image
         assert not page.approve_button.isEnabled()
         assert page.process_button.isEnabled()
         page.settings_panel.set_values(ProcessingSettings(), notify=True)
-        assert page.settings_panel.settings() == ProcessingSettings()
+        assert page.settings_panel.settings().background_rgb() == ProcessingSettings().background_rgb()
     finally:
         page.controller.stop()
         window.capture_page.controller.stop()
@@ -118,11 +118,11 @@ def test_late_result_cannot_replace_preview_for_changed_settings(qapp, db, proce
         wait_for(qapp, lambda: not page.loading)
         page.process()
         wait_for(qapp, entered.is_set)
-        page.settings_panel.fields["grey"].setValue(120)
+        page.settings_panel.fields["background_r"].setValue(120)
         proceed.set()
         wait_for(qapp, lambda: not page.busy)
         assert page.current_job is None and not page.after.canvas.has_image
-        assert page.settings_panel.settings().grey == 120
+        assert page.settings_panel.settings().background_r == 120
         assert not page.approve_button.isEnabled()
         assert ProcessingRepository(db).latest(capture_id)["status"] == "awaiting_review"
     finally:

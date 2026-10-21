@@ -1,9 +1,9 @@
 # Nikon D5500 camera setup
 
 Research checked 13 October 2026. No physical D5500 was available for validation.
-This application monitors a local folder. It does not issue camera commands,
-identify a connected camera, trigger a shutter or provide live view. Watching means
-the folder is accessible, not that the camera USB connection is healthy.
+This application imports completed photo batches from an SD card or local folder.
+It does not issue camera commands, identify a connected camera, trigger a shutter,
+or provide live view.
 
 - Nikon's [compatibility table](https://www.nikonimgsupport.com/eu/BV_article?articleNo=000050786&configured=1&lang=pt_PT) lists D5500 USB support in Camera Control Pro 2, now discontinued.
 - Nikon's [availability notice](https://www.nikonimgsupport.com/eu/BV_article?articleNo=000067053&configured=1&lang=en_GB) says Camera Control Pro 2 is no longer available for purchase or download in Europe. Its old Download Center link now redirects. Ask Nikon about your region; do not assume a new licence/download is available.
@@ -13,19 +13,18 @@ the folder is accessible, not that the camera USB connection is healthy.
 
 No Nikon software, SDK, licence key or third-party camera utility is bundled.
 
-## Folder workflow
+## SD-card workflow
 
-1. Configure Incoming, Originals, Processed and Export as separate local folders in Capture. Defaults are under your Local AppData.
-2. If you already have compatible licensed tethering software, configure its JPEG or supported RAW save destination to Incoming. Connect the camera directly with a suitable USB data cable. Check camera errors in that external software.
-3. Otherwise transfer JPEGs or supported RAW files into Incoming using Nikon Transfer 2 (separately available through NX Studio on the official D5500 page above), or copy from a card reader. Transfer may require explicit operator action. Continuous automatic delivery is unverified.
-4. Select the student and capture session, then Resume watcher. Student selection does not advance automatically.
-5. Confirm each displayed assignment. Delayed files use the student selected at first detection, so always check the proposed identity and counts.
-6. Resolve transfer errors and use Retry/Resume. Incoming files and earlier takes remain unchanged.
+1. Configure separate Incoming, Originals, Processed, and Export folders under **Assign**. Defaults are under Local AppData.
+2. Photograph a class, remove the SD card safely, and insert it into the laptop.
+3. Create or choose a batch, then choose **Import card folder**. JPEG, CR2, CR3, and NEF files are copied into managed Incoming storage before the card is removed.
+4. Select one or more photographs on the left and the matching student on the right, then assign them.
+5. Confirm the assignments to archive immutable originals. Resolve any import errors with **Retry**.
+6. Open Review to process all confirmed photographs, inspect each result, edit its mask, and adjust portrait size and position.
 
 ## Required event rehearsal, not performed here
 
-Use the actual D5500, cable, PC and transfer software. Verify JPEG/RAW delivery and delays,
-bursts, reconnects, partial files, duplicates, battery/power loss and assignment
-across student changes. Separately test external shutter triggering/live view if
-used. Record firmware/software versions, counts and results before prize-giving.
-This build makes no hardware-tested claim for shutter, live view or automatic USB transfer.
+Use the actual D5500, SD card, reader, and PC. Verify JPEG and NEF import, large bursts,
+duplicates, card removal after import, assignment across classes, processing, and export.
+Record firmware/software versions, counts, and results before prize-giving. This build
+makes no hardware-tested claim for shutter, live view, or automatic USB transfer.

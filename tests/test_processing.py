@@ -33,8 +33,9 @@ def test_full_resolution_cutout_and_grey_composite(tmp_path):
     assert path.read_bytes() == original and path.stat().st_mtime_ns == stat.st_mtime_ns
 
 
-def test_raw_source_uses_raw_decoder_without_modifying_original(tmp_path, monkeypatch):
-    path = tmp_path / "subject.CR3"
+@pytest.mark.parametrize("extension", ("CR3", "NEF"))
+def test_raw_source_uses_raw_decoder_without_modifying_original(tmp_path, monkeypatch, extension):
+    path = tmp_path / f"subject.{extension}"
     path.write_bytes(b"raw-camera-bytes")
     rgb = np.full((120, 90, 3), (0, 220, 0), dtype=np.uint8)
     rgb[35:95, 30:60] = (180, 100, 80)
@@ -47,7 +48,7 @@ def test_raw_source_uses_raw_decoder_without_modifying_original(tmp_path, monkey
     class FakeRawpy:
         @staticmethod
         def imread(source):
-            assert str(source).endswith("subject.CR3")
+            assert str(source).endswith(f"subject.{extension}")
             return FakeRaw()
 
     monkeypatch.setattr(processing, "rawpy_module", lambda: FakeRawpy)
@@ -128,6 +129,19 @@ def test_portrait_fit_never_stretches_or_crops(source_size):
     assert composite.shape[:2] == (240, 180)
 
 
+def test_portrait_canvas_applies_color_scale_and_position():
+    cutout = Image.new("RGBA", (40, 80), (255, 0, 0, 255))
+    settings = replace(
+        clean_settings(), canvas_width=200, canvas_height=200, padding_percent=0,
+        background_r=12, background_g=34, background_b=56,
+        subject_scale=50, offset_x=25, offset_y=-20,
+    )
+    composite = np.asarray(composite_portrait(cutout, settings))
+    ys, xs = np.where(composite[:, :, 0] == 255)
+    assert (xs.min(), xs.max(), ys.min(), ys.max()) == (100, 149, 30, 129)
+    np.testing.assert_array_equal(composite[0, 0, :3], (12, 34, 56))
+
+
 @pytest.mark.parametrize("kind", ["no-green", "empty-green"])
 def test_bad_separation_is_blocking_not_silently_approved(tmp_path, kind):
     path = tmp_path / "bad.jpg"
@@ -158,6 +172,6 @@ def test_every_setting_participates_in_cache_identity():
     default = ProcessingSettings()
     for name, value in asdict(default).items():
         delta = -1 if name in ("saturation_high", "value_high") else (.05 if name == "spill_strength" else 1)
-        changed = replace(default, **{name: value + delta})
+        changed = replace(default, **{name: 1 if value is None else value + delta})
         assert changed.digest() != default.digest(), name
     assert replace(default, feather=1).digest() == replace(default, feather=1.0).digest()

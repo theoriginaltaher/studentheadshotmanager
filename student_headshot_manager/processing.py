@@ -11,10 +11,10 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
-PIPELINE_VERSION = "local-chroma-key-1"
+PIPELINE_VERSION = "local-chroma-key-2"
 MAX_PIXELS = 40_000_000
 MAX_BYTES = 250 * 1024 * 1024
-RAW_EXTENSIONS = {".cr2", ".cr3"}
+RAW_EXTENSIONS = {".cr2", ".cr3", ".nef"}
 
 
 @dataclass(frozen=True)
@@ -32,9 +32,16 @@ class ProcessingSettings:
     spill_strength: float = 0.65
     spill_width: int = 8
     grey: int = 180
-    canvas_width: int = 1800
-    canvas_height: int = 2400
+    background_r: int | None = None
+    background_g: int | None = None
+    background_b: int | None = None
+    canvas_width: int = 1080
+    canvas_height: int = 1080
+    dpi: int = 300
     padding_percent: float = 4.0
+    subject_scale: float = 100.0
+    offset_x: int = 0
+    offset_y: int = 0
     jpeg_quality: int = 95
 
     def validate(self):
@@ -44,13 +51,20 @@ class ProcessingSettings:
             "value_low": (0, 255), "value_high": (0, 255),
             "noise_radius": (0, 20), "holes_radius": (0, 20), "edge_shift": (-20, 20),
             "spill_width": (0, 100), "grey": (0, 255),
-            "canvas_width": (16, 10000), "canvas_height": (16, 10000), "jpeg_quality": (85, 100),
+            "canvas_width": (16, 10000), "canvas_height": (16, 10000),
+            "dpi": (72, 1200), "offset_x": (-10000, 10000), "offset_y": (-10000, 10000),
+            "jpeg_quality": (85, 100),
         }
         for name, (low, high) in integers.items():
             value = getattr(self, name)
             if type(value) is not int or not low <= value <= high:
                 raise ValueError(f"{name.replace('_', ' ').title()} must be an integer from {low} to {high}.")
-        for name, low, high in (("feather", 0, 20), ("spill_strength", 0, 1), ("padding_percent", 0, 25)):
+        for name in ("background_r", "background_g", "background_b"):
+            value = getattr(self, name)
+            if value is not None and (type(value) is not int or not 0 <= value <= 255):
+                raise ValueError(f"{name.replace('_', ' ').title()} must be an integer from 0 to 255.")
+        for name, low, high in (("feather", 0, 20), ("spill_strength", 0, 1),
+                                ("padding_percent", 0, 25), ("subject_scale", 10, 400)):
             value = getattr(self, name)
             if type(value) not in (int, float) or not low <= value <= high:
                 raise ValueError(f"{name.replace('_', ' ').title()} must be from {low} to {high}.")
@@ -64,12 +78,17 @@ class ProcessingSettings:
     def canonical_json(self):
         self.validate()
         values = asdict(self)
-        for name in ("feather", "spill_strength", "padding_percent"):
+        for name in ("feather", "spill_strength", "padding_percent", "subject_scale"):
             values[name] = float(values[name])
         return json.dumps(values, sort_keys=True, separators=(",", ":"))
 
     def digest(self):
         return hashlib.sha256(self.canonical_json().encode()).hexdigest()
+
+    def background_rgb(self):
+        if None in (self.background_r, self.background_g, self.background_b):
+            return (self.grey, self.grey, self.grey)
+        return (self.background_r, self.background_g, self.background_b)
 
 
 def read_original(path):
@@ -211,8 +230,16 @@ def composite_portrait(cutout, settings):
     inset = settings.padding_percent / 100
     available = (max(1, round(width * (1 - 2 * inset))), max(1, round(height * (1 - 2 * inset))))
     fitted = ImageOps.contain(cutout, available, Image.Resampling.LANCZOS)
-    background = Image.new("RGBA", (width, height), (settings.grey,) * 3 + (255,))
-    background.alpha_composite(fitted, ((width - fitted.width) // 2, (height - fitted.height) // 2))
+    if settings.subject_scale != 100:
+        fitted = fitted.resize(
+            (max(1, round(fitted.width * settings.subject_scale / 100)),
+             max(1, round(fitted.height * settings.subject_scale / 100))),
+            Image.Resampling.LANCZOS,
+        )
+    background = Image.new("RGBA", (width, height), settings.background_rgb() + (255,))
+    position = ((width - fitted.width) // 2 + settings.offset_x,
+                (height - fitted.height) // 2 + settings.offset_y)
+    background.alpha_composite(fitted, position)
     return background.convert("RGB")
 
 
@@ -233,6 +260,25 @@ def process_bytes(data, settings, source_path=None):
     corrected = suppress_spill(rgb, foreground, alpha, settings.spill_strength, settings.spill_width)
     cutout = Image.fromarray(corrected).convert("RGBA")
     mask = Image.fromarray(alpha)
+    cutout.putalpha(mask)
+    portrait = composite_portrait(cutout, settings)
+    return ProcessingOutput(cutout, mask, portrait, diagnostics, original.info.get("icc_profile"))
+
+
+def process_with_mask(data, settings, mask, source_path=None):
+    """Rebuild outputs from a manually edited full-resolution alpha mask."""
+    settings.validate()
+    original = load_oriented(data, source_path)
+    mask = mask.convert("L")
+    if mask.size != original.size:
+        raise ValueError("The edited mask dimensions do not match the upright original.")
+    alpha = np.asarray(mask).copy()
+    binary = np.where(alpha >= 128, 255, 0).astype(np.uint8)
+    diagnostics = inspect_mask(binary, 1.0, int(np.count_nonzero(binary)))
+    diagnostics["manual_mask"] = True
+    rgb = np.asarray(original)
+    corrected = suppress_spill(rgb, binary, alpha, settings.spill_strength, settings.spill_width)
+    cutout = Image.fromarray(corrected).convert("RGBA")
     cutout.putalpha(mask)
     portrait = composite_portrait(cutout, settings)
     return ProcessingOutput(cutout, mask, portrait, diagnostics, original.info.get("icc_profile"))

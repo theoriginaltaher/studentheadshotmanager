@@ -1,10 +1,13 @@
 """Watchdog notifications and ingestion commands run outside the GUI thread."""
 import logging
 
+import os
 from pathlib import Path
 import queue
+import shutil
 import threading
 import time
+import uuid
 
 from PySide6.QtCore import QObject, QLockFile, Signal
 from watchdog.events import FileSystemEventHandler
@@ -13,7 +16,7 @@ from watchdog.observers import Observer
 from .capture_repository import CaptureRepository
 from .database import Database
 from .folders import Folders
-from .ingestion import IngestionEngine
+from .ingestion import IMAGE_EXTENSIONS, IngestionEngine
 
 
 class IncomingHandler(FileSystemEventHandler):
@@ -135,10 +138,48 @@ class CaptureController(QObject):
                             self.status.emit("Paused · already detected files may finish", False)
                         elif action == "confirm":
                             engine.accept(args[0])
+                        elif action == "confirm_many":
+                            for capture_id in args[0]:
+                                engine.accept(capture_id)
                         elif action == "reassign":
                             repo.reassign(*args)
+                        elif action == "assign_many":
+                            capture_ids, student_id = args
+                            for capture_id in capture_ids:
+                                repo.reassign(capture_id, student_id)
+                        elif action == "import_files":
+                            if folders is None:
+                                raise ValueError("Configure the four folders before importing from a card.")
+                            sources, session_id = args
+                            assignment = repo.unassigned(session_id)
+                            incoming = Path(folders.incoming).resolve()
+                            incoming.mkdir(parents=True, exist_ok=True)
+                            imported = 0
+                            for value in sources:
+                                source = Path(value).resolve()
+                                if not source.is_file() or source.suffix.lower() not in IMAGE_EXTENSIONS:
+                                    continue
+                                if source.parent == incoming:
+                                    destination = source
+                                else:
+                                    destination = incoming / source.name
+                                    counter = 2
+                                    while destination.exists():
+                                        destination = incoming / f"{source.stem} ({counter}){source.suffix.lower()}"
+                                        counter += 1
+                                    temporary = incoming / f".importing-{uuid.uuid4().hex}{source.suffix.lower()}"
+                                    try:
+                                        shutil.copy2(source, temporary)
+                                        os.replace(temporary, destination)
+                                    finally:
+                                        temporary.unlink(missing_ok=True)
+                                imported += bool(engine.discover(destination, assignment))
+                            self.status.emit(f"Batch imported · validating {imported} photograph(s)", False)
                         elif action == "discard":
                             repo.discard(args[0])
+                        elif action == "discard_many":
+                            for capture_id in args[0]:
+                                repo.discard(capture_id)
                         elif action == "retry":
                             engine.retry(args[0])
                         self.changed.emit()

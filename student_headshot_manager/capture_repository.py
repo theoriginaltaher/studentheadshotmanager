@@ -14,7 +14,7 @@ def utc_now():
 
 @dataclass(frozen=True)
 class Assignment:
-    student_record_id: int
+    student_record_id: int | None
     student_id: str
     student_name: str
     session_id: str
@@ -102,6 +102,11 @@ class CaptureRepository:
             raise ValueError("Select a capture session.")
         return Assignment(student_record_id, student["student_id"], student["full_name"], session_id)
 
+    def unassigned(self, session_id):
+        if not self.db.connection.execute("SELECT 1 FROM capture_sessions WHERE id=?", (session_id,)).fetchone():
+            raise ValueError("Select a capture session.")
+        return Assignment(None, "", "Unassigned", session_id)
+
     def get(self, capture_id):
         row = self.db.connection.execute("SELECT * FROM captures WHERE id=?", (capture_id,)).fetchone()
         if not row:
@@ -121,7 +126,7 @@ class CaptureRepository:
         capture_id = uuid.uuid4().hex
         with self.db.transaction():
             # Keep the identity snapshot even if the roster entry was just deleted.
-            live = self.db.student(assignment.student_record_id)
+            live = self.db.student(assignment.student_record_id) if assignment.student_record_id is not None else None
             record_id = assignment.student_record_id if live and live["student_id"] == assignment.student_id else None
             self.db.connection.execute("""
                 INSERT INTO captures(id,session_id,student_record_id,student_id,student_name,
@@ -130,7 +135,9 @@ class CaptureRepository:
             """, (capture_id, assignment.session_id, record_id, assignment.student_id, assignment.student_name,
                   str(path), source_key, *signature, utc_now(),
                   datetime.fromtimestamp(signature[1] / 1e9, timezone.utc).isoformat() if signature[1] else utc_now()))
-            self.event(capture_id, "detected", f"Proposed: {assignment.student_name} ({assignment.student_id})")
+            detail = (f"Proposed: {assignment.student_name} ({assignment.student_id})"
+                      if record_id is not None else "Imported for batch assignment")
+            self.event(capture_id, "detected", detail)
         return capture_id
 
     def event(self, capture_id, action, detail):
@@ -154,7 +161,7 @@ class CaptureRepository:
                 content_hash=?,thumbnail=?,capture_time=?,source_size=?,source_mtime_ns=?,
                 error_message=NULL,failure_stage=NULL WHERE id=?""",
                 (content_hash, thumbnail, capture_time, *signature, capture_id))
-            self.event(capture_id, "ready", "JPEG verified; operator confirmation required")
+            self.event(capture_id, "ready", "Image verified; operator confirmation required")
         return True
 
     def fail(self, capture_id, message, stage="ingestion"):
@@ -177,6 +184,9 @@ class CaptureRepository:
 
     def claim_copy(self, capture_id, destination):
         with self.db.transaction():
+            row = self.get(capture_id)
+            if row["student_record_id"] is None:
+                raise ValueError("Assign this photograph to a student before confirming it.")
             cursor = self.db.connection.execute("""UPDATE captures SET processing_status='copying',
                 original_copy_path=?,confirmed_at=?,error_message=NULL,failure_stage='copy'
                 WHERE id=? AND (processing_status='awaiting_confirmation' OR
