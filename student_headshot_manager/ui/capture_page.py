@@ -122,14 +122,36 @@ class CapturePage(QWidget):
         top = QHBoxLayout()
         self.photo_count = text_label("0 photographs", "section")
         top.addWidget(self.photo_count, 1)
+        layout.addLayout(top)
+        filters = QHBoxLayout()
+        self.photo_search = QLineEdit()
+        self.photo_search.setPlaceholderText("Search file, student, or ID")
+        self.photo_search.setClearButtonEnabled(True)
+        self.photo_search.textChanged.connect(self.refresh_photos)
+        filters.addWidget(self.photo_search, 1)
+        self.photo_class_filter = QComboBox()
+        self.photo_class_filter.setAccessibleName("Photograph class filter")
+        self.photo_class_filter.currentIndexChanged.connect(self.refresh_photos)
+        filters.addWidget(self.photo_class_filter)
+        layout.addLayout(filters)
+        sorting = QHBoxLayout()
         self.photo_filter = QComboBox()
+        self.photo_filter.setAccessibleName("Photograph status filter")
         for label, value in (("All photos", None), ("Unassigned", "unassigned"),
                              ("Ready to confirm", "ready"), ("Assigned", "imported"),
                              ("Needs attention", "attention")):
             self.photo_filter.addItem(label, value)
         self.photo_filter.currentIndexChanged.connect(self.refresh_photos)
-        top.addWidget(self.photo_filter)
-        layout.addLayout(top)
+        sorting.addWidget(self.photo_filter, 1)
+        self.photo_sort = QComboBox()
+        self.photo_sort.setAccessibleName("Photograph sort order")
+        for label, value in (("Newest first", "newest"), ("Oldest first", "oldest"),
+                             ("File A–Z", "file"), ("Student A–Z", "student"),
+                             ("Class A–Z", "class")):
+            self.photo_sort.addItem(label, value)
+        self.photo_sort.currentIndexChanged.connect(self.refresh_photos)
+        sorting.addWidget(self.photo_sort, 1)
+        layout.addLayout(sorting)
         self.table = QTableWidget(0, 3)
         self.table.setAccessibleName("Imported photographs")
         self.table.setHorizontalHeaderLabels(["Photograph", "File", "Assignment and status"])
@@ -202,14 +224,23 @@ class CapturePage(QWidget):
 
     def refresh_roster(self):
         selected_class = self.class_filter.currentData() if hasattr(self, "class_filter") else None
+        selected_photo_class = (self.photo_class_filter.currentData()
+                                if hasattr(self, "photo_class_filter") else None)
         self.class_filter.blockSignals(True)
+        self.photo_class_filter.blockSignals(True)
         self.class_filter.clear()
+        self.photo_class_filter.clear()
         self.class_filter.addItem("All classes", None)
+        self.photo_class_filter.addItem("All classes", None)
         for row in self.db.classes():
             self.class_filter.addItem(row["name"], row["id"])
+            self.photo_class_filter.addItem(row["name"], row["id"])
         self.class_filter.setCurrentIndex(max(0, self.class_filter.findData(selected_class)))
+        self.photo_class_filter.setCurrentIndex(max(0, self.photo_class_filter.findData(selected_photo_class)))
         self.class_filter.blockSignals(False)
+        self.photo_class_filter.blockSignals(False)
         self.refresh_students()
+        self.refresh_photos()
 
     def refresh_students(self):
         selected = self.selected_student_id()
@@ -314,12 +345,36 @@ class CapturePage(QWidget):
             visible = [row for row in all_rows if row["processing_status"] in ("failed", "discarded", "duplicate")]
         else:
             visible = list(all_rows)
+        class_id = self.photo_class_filter.currentData()
+        if class_id is not None:
+            visible = [row for row in visible if row["assigned_class_id"] == class_id]
+        query = self.photo_search.text().strip().casefold()
+        if query:
+            visible = [row for row in visible if query in " ".join((
+                Path(row["original_path"]).name, row["student_name"] or "",
+                row["student_id"] or "", row["class_name"] or "",
+                STATUS_LABELS[row["processing_status"]],
+            )).casefold()]
+        sort_mode = self.photo_sort.currentData()
+        if sort_mode == "oldest":
+            visible.sort(key=lambda row: (row["received_at"], row["id"]))
+        elif sort_mode == "file":
+            visible.sort(key=lambda row: (Path(row["original_path"]).name.casefold(), row["received_at"]))
+        elif sort_mode == "student":
+            visible.sort(key=lambda row: (
+                row["student_record_id"] is None, (row["student_name"] or "").casefold(),
+                (row["student_id"] or "").casefold(), Path(row["original_path"]).name.casefold()))
+        elif sort_mode == "class":
+            visible.sort(key=lambda row: (
+                row["assigned_class_id"] is None, (row["class_name"] or "").casefold(),
+                (row["student_name"] or "").casefold(), Path(row["original_path"]).name.casefold()))
         self.rows = {row["id"]: row for row in all_rows}
         unassigned = sum(row["student_record_id"] is None and row["processing_status"] != "duplicate" for row in all_rows)
         ready = sum(row["processing_status"] == "awaiting_confirmation" for row in all_rows)
         accepted = sum(row["processing_status"] == "imported" for row in all_rows)
+        shown = f"{len(visible):,} of {len(all_rows):,} photos shown"
         self.photo_count.setText(
-            f"{len(all_rows):,} photos · {unassigned:,} unassigned · {ready:,} ready · {accepted:,} archived")
+            f"{shown} · {unassigned:,} unassigned · {ready:,} ready · {accepted:,} archived")
         self.table.blockSignals(True)
         self.table.setRowCount(len(visible))
         for index, row in enumerate(visible):

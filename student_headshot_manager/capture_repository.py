@@ -115,7 +115,13 @@ class CaptureRepository:
 
     def photos(self, session_id=None):
         return self.db.connection.execute(
-            "SELECT * FROM captures WHERE (? IS NULL OR session_id=?) ORDER BY received_at DESC, rowid DESC",
+            """SELECT captures.*, students.class_id AS assigned_class_id,
+                      classes.name AS class_name
+               FROM captures
+               LEFT JOIN students ON students.id = captures.student_record_id
+               LEFT JOIN classes ON classes.id = students.class_id
+               WHERE (? IS NULL OR captures.session_id=?)
+               ORDER BY captures.received_at DESC, captures.rowid DESC""",
             (session_id, session_id),
         ).fetchall()
 

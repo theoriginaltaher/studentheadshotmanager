@@ -89,5 +89,44 @@ def test_capture_failure_is_visible_with_retry_control(qapp, db, tmp_path):
     assert "incomplete" in panel.detail.text()
     assert panel.retry_button.isEnabled()
     assert not panel.confirm_button.isEnabled()
-    assert "1 photos" in panel.photo_count.text()
+    assert "1 of 1 photos shown" in panel.photo_count.text()
     window.close()
+
+
+def test_photo_search_class_filter_and_sort(qapp, db, tmp_path):
+    repo = CaptureRepository(db)
+    class_a = db.create_class("A class")
+    class_b = db.create_class("B class")
+    first = db.save_student("A-01", "Zara Student", class_a)
+    second = db.save_student("B-01", "Adam Student", class_b)
+    session = repo.create_session("Sorting")
+    for index, (filename, student) in enumerate((("z-last.jpg", first), ("a-first.jpg", second)), 1):
+        path = tmp_path / filename
+        path.write_bytes(b"pending")
+        repo.begin_receiving(path, str(path), (index, index), repo.assignment(student, session))
+    window = MainWindow(db)
+    panel = window.capture_page
+    try:
+        panel.refresh_sessions(session)
+        assert panel.table.rowCount() == 2
+
+        panel.photo_class_filter.setCurrentIndex(panel.photo_class_filter.findData(class_b))
+        assert panel.table.rowCount() == 1
+        assert "1 of 2 photos shown" in panel.photo_count.text()
+        assert panel.table.item(0, 1).text() == "a-first.jpg"
+
+        panel.photo_class_filter.setCurrentIndex(0)
+        panel.photo_search.setText("Zara")
+        assert panel.table.rowCount() == 1
+        assert panel.table.item(0, 1).text() == "z-last.jpg"
+
+        panel.photo_search.clear()
+        panel.photo_sort.setCurrentIndex(panel.photo_sort.findData("file"))
+        assert [panel.table.item(row, 1).text() for row in range(2)] == ["a-first.jpg", "z-last.jpg"]
+
+        panel.photo_sort.setCurrentIndex(panel.photo_sort.findData("class"))
+        assert [panel.table.item(row, 1).text() for row in range(2)] == ["z-last.jpg", "a-first.jpg"]
+    finally:
+        panel.controller.stop()
+        wait_for(qapp, lambda: not panel.controller.is_running())
+        window.close()

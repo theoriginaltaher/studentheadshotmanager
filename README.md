@@ -75,6 +75,10 @@ byte-for-byte copies.
 5. Inspect the thumbnails and assignments, then choose **Confirm selected assignments**
    to archive immutable originals. Use **Discard** or **Retry** when appropriate.
 
+The photograph list can be searched by filename, student name, or student ID. Once
+assigned, photographs can be filtered by class and sorted by capture order, filename,
+student, or class. Search, class, and assignment-status filters can be combined.
+
 The photo list shows the selected batch and can be filtered by assignment state.
 Duplicate deliveries are shown explicitly but excluded from received counts. Confirming a photograph
 changes Not photographed to Captured; later/manual roster statuses are preserved.
