@@ -171,7 +171,7 @@ also opens full resolution. These shortcuts apply only inside Students & takes.
 ## Local green-screen processing
 
 1. Confirm assignments in **Assign**, then open **Review → Processing tools**.
-2. Click **Even green screen preset** for a starting point, or adjust the settings.
+2. Click **Hair-safe green screen preset** for a conservative starting point, or adjust the settings.
 3. Choose **Process all assigned** for the batch, or **Process locally** for one photograph.
    Processing runs in a background queue using the archived
    original. No images are uploaded and no cloud service or downloaded model is used.
@@ -186,11 +186,15 @@ also opens full resolution. These shortcuts apply only inside Students & takes.
    **Open output folder** opens the saved local files.
 
 HSV thresholds use OpenCV hue units 0–179 and saturation/brightness units 0–255.
+Only green regions connected to a frame edge are removed automatically. Enclosed
+green regions are retained to protect hair and clothing; remove any true background
+openings that are fully surrounded by the subject in **Edit mask**.
 Noise removal opens the foreground mask; hole cleanup closes it. Radii are measured
 in source pixels. Negative edge shift erodes the subject; positive shift dilates it.
 Feathering applies Gaussian smoothing. Spill strength and edge-band width control
 suppression of excess green near subject edges, leaving the interior unaffected.
-The preset is a starting point for evenly lit green screens, not a quality guarantee.
+The preset disables automatic opening and erosion so fine hair is not discarded by
+default. It remains a starting point for evenly lit green screens, not a quality guarantee.
 
 EXIF orientation is applied to the full-resolution source pixels. The transparent
 RGBA PNG and grayscale mask retain those upright dimensions. The portrait uniformly

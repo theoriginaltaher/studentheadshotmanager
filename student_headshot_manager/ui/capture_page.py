@@ -5,11 +5,12 @@ from pathlib import Path
 import sqlite3
 
 from PySide6.QtCore import QSize, Qt, Signal, QTimer
-from PySide6.QtGui import QIcon, QPixmap
+from PySide6.QtGui import QAction, QIcon, QKeySequence, QPixmap
 from PySide6.QtWidgets import (
     QAbstractItemView, QComboBox, QFileDialog, QHBoxLayout, QHeaderView,
-    QInputDialog, QLabel, QLineEdit, QMessageBox, QPushButton, QSplitter,
-    QTableWidget, QTableWidgetItem, QVBoxLayout, QWidget,
+    QInputDialog, QLabel, QLineEdit, QListWidget, QListWidgetItem, QMessageBox,
+    QPushButton, QSlider, QSplitter, QStackedWidget, QTableWidget,
+    QTableWidgetItem, QVBoxLayout, QWidget,
 )
 
 from ..capture_repository import CaptureRepository
@@ -102,6 +103,9 @@ class CapturePage(QWidget):
             actions.addWidget(button)
         actions.addStretch()
         layout.addLayout(actions)
+        layout.addWidget(text_label(
+            "Ctrl+F photos · Ctrl+K students · Alt+Up/Down photo · Alt+Left/Right student · "
+            "Ctrl+Enter assign · Ctrl+Shift+Enter confirm", "muted"))
         self.feedback = text_label(
             "Nothing is accepted automatically. Imported card files are copied into Incoming; archived originals are never modified.",
             "muted")
@@ -110,9 +114,59 @@ class CapturePage(QWidget):
         self.controller.changed.connect(self.on_changed)
         self.controller.status.connect(lambda message, watching: self.feedback.setText(message))
         self.controller.result.connect(self.on_result)
+        self.install_shortcuts()
         self.refresh_roster()
         self.refresh_sessions()
         self.on_changed()
+
+    def install_shortcuts(self):
+        self.shortcuts = {}
+        bindings = {
+            "focus_photos": ("Ctrl+F", lambda: self.photo_search.setFocus()),
+            "focus_students": ("Ctrl+K", lambda: self.student_search.setFocus()),
+            "previous_photo": ("Alt+Up", lambda: self.move_photo(-1)),
+            "next_photo": ("Alt+Down", lambda: self.move_photo(1)),
+            "previous_student": ("Alt+Left", lambda: self.move_student(-1)),
+            "next_student": ("Alt+Right", lambda: self.move_student(1)),
+            "assign": ("Ctrl+Return", self.assign_selected),
+            "confirm": ("Ctrl+Shift+Return", self.confirm_selected),
+        }
+        for name, (sequence, callback) in bindings.items():
+            action = QAction(self)
+            action.setShortcut(QKeySequence(sequence))
+            action.setShortcutContext(Qt.WidgetWithChildrenShortcut)
+            action.triggered.connect(callback)
+            self.addAction(action)
+            self.shortcuts[name] = action
+
+    @staticmethod
+    def move_table_selection(table, step):
+        if not table.rowCount():
+            return
+        current = table.currentRow()
+        target = 0 if current < 0 else max(0, min(table.rowCount() - 1, current + step))
+        table.clearSelection()
+        table.selectRow(target)
+        table.setCurrentCell(target, 0)
+        table.scrollToItem(table.item(target, 0))
+        table.setFocus()
+
+    def move_photo(self, step):
+        if self.photo_views.currentIndex() == 1:
+            if not self.photo_grid.count():
+                return
+            current = self.photo_grid.currentRow()
+            target = 0 if current < 0 else max(0, min(self.photo_grid.count() - 1, current + step))
+            self.photo_grid.clearSelection()
+            self.photo_grid.setCurrentRow(target)
+            self.photo_grid.item(target).setSelected(True)
+            self.photo_grid.scrollToItem(self.photo_grid.item(target))
+            self.photo_grid.setFocus()
+        else:
+            self.move_table_selection(self.table, step)
+
+    def move_student(self, step):
+        self.move_table_selection(self.student_table, step)
 
     def build_photo_panel(self):
         panel = QWidget()
@@ -152,6 +206,24 @@ class CapturePage(QWidget):
         self.photo_sort.currentIndexChanged.connect(self.refresh_photos)
         sorting.addWidget(self.photo_sort, 1)
         layout.addLayout(sorting)
+        view_controls = QHBoxLayout()
+        view_controls.addWidget(QLabel("View"))
+        self.photo_view = QComboBox()
+        self.photo_view.addItem("List", "list")
+        self.photo_view.addItem("Grid", "grid")
+        self.photo_view.currentIndexChanged.connect(self.change_photo_view)
+        view_controls.addWidget(self.photo_view)
+        view_controls.addWidget(QLabel("Thumbnail size"))
+        self.thumbnail_slider = QSlider(Qt.Horizontal)
+        self.thumbnail_slider.setRange(96, 240)
+        self.thumbnail_slider.setSingleStep(16)
+        self.thumbnail_slider.setPageStep(32)
+        self.thumbnail_slider.setAccessibleName("Photograph thumbnail size")
+        self.thumbnail_slider.valueChanged.connect(self.update_thumbnail_size)
+        self.thumbnail_slider.sliderReleased.connect(self.save_photo_view)
+        view_controls.addWidget(self.thumbnail_slider, 1)
+        layout.addLayout(view_controls)
+        self.photo_views = QStackedWidget()
         self.table = QTableWidget(0, 3)
         self.table.setAccessibleName("Imported photographs")
         self.table.setHorizontalHeaderLabels(["Photograph", "File", "Assignment and status"])
@@ -168,7 +240,21 @@ class CapturePage(QWidget):
         self.table.setShowGrid(False)
         self.table.setAlternatingRowColors(True)
         self.table.itemSelectionChanged.connect(self.update_actions)
-        layout.addWidget(self.table, 1)
+        self.photo_views.addWidget(self.table)
+        self.photo_grid = QListWidget()
+        self.photo_grid.setAccessibleName("Imported photograph grid")
+        self.photo_grid.setViewMode(QListWidget.IconMode)
+        self.photo_grid.setResizeMode(QListWidget.Adjust)
+        self.photo_grid.setMovement(QListWidget.Static)
+        self.photo_grid.setSelectionMode(QAbstractItemView.ExtendedSelection)
+        self.photo_grid.setWordWrap(True)
+        self.photo_grid.setSpacing(6)
+        self.photo_grid.itemSelectionChanged.connect(self.update_actions)
+        self.photo_views.addWidget(self.photo_grid)
+        layout.addWidget(self.photo_views, 1)
+        view_settings = self.repo.settings("assignment_photo_view", {})
+        self.thumbnail_slider.setValue(int(view_settings.get("thumbnail_size", 144)))
+        self.photo_view.setCurrentIndex(max(0, self.photo_view.findData(view_settings.get("mode", "list"))))
         self.detail = text_label("Select one or more photographs, then choose a student on the right.")
         layout.addWidget(self.detail)
         return panel
@@ -217,10 +303,49 @@ class CapturePage(QWidget):
         super().resizeEvent(event)
         QTimer.singleShot(0, self.reveal_selection)
 
+    def change_photo_view(self):
+        if not hasattr(self, "photo_views"):
+            return
+        selected = set(self.selected_photo_ids())
+        self.photo_views.setCurrentIndex(1 if self.photo_view.currentData() == "grid" else 0)
+        target = self.photo_grid if self.photo_views.currentIndex() else self.table
+        target.clearSelection()
+        if target is self.table:
+            for row in range(self.table.rowCount()):
+                if self.table.item(row, 0).data(Qt.UserRole) in selected:
+                    self.table.selectRow(row)
+        else:
+            for row in range(self.photo_grid.count()):
+                item = self.photo_grid.item(row)
+                item.setSelected(item.data(Qt.UserRole) in selected)
+        self.save_photo_view()
+        self.reveal_selection()
+
+    def update_thumbnail_size(self, size):
+        if not hasattr(self, "table"):
+            return
+        self.table.setIconSize(QSize(size, size))
+        self.table.verticalHeader().setDefaultSectionSize(size + 12)
+        self.table.setColumnWidth(0, size + 16)
+        self.photo_grid.setIconSize(QSize(size, size))
+        self.photo_grid.setGridSize(QSize(size + 38, size + 72))
+
+    def save_photo_view(self):
+        if hasattr(self, "photo_view"):
+            self.repo.set_settings("assignment_photo_view", {
+                "mode": self.photo_view.currentData(),
+                "thumbnail_size": self.thumbnail_slider.value(),
+            })
+
     def reveal_selection(self):
-        rows = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
-        if rows:
-            self.table.scrollToItem(self.table.item(rows[0].row(), 0))
+        if hasattr(self, "photo_views") and self.photo_views.currentIndex() == 1:
+            items = self.photo_grid.selectedItems()
+            if items:
+                self.photo_grid.scrollToItem(items[0])
+        else:
+            rows = self.table.selectionModel().selectedRows() if self.table.selectionModel() else []
+            if rows:
+                self.table.scrollToItem(self.table.item(rows[0].row(), 0))
 
     def refresh_roster(self):
         selected_class = self.class_filter.currentData() if hasattr(self, "class_filter") else None
@@ -312,6 +437,8 @@ class CapturePage(QWidget):
         self.update_actions()
 
     def selected_photo_ids(self):
+        if hasattr(self, "photo_views") and self.photo_views.currentIndex() == 1:
+            return [item.data(Qt.UserRole) for item in self.photo_grid.selectedItems()]
         result = []
         if self.table.selectionModel():
             for index in self.table.selectionModel().selectedRows():
@@ -398,6 +525,22 @@ class CapturePage(QWidget):
             if row["id"] in selected:
                 self.table.selectRow(index)
         self.table.blockSignals(False)
+        self.photo_grid.blockSignals(True)
+        self.photo_grid.clear()
+        for row in visible:
+            assignment = (f"{row['student_name']} ({row['student_id']})" if row["student_record_id"] is not None
+                          else "Unassigned")
+            item = QListWidgetItem(
+                f"{Path(row['original_path']).name}\n{assignment}\n{STATUS_LABELS[row['processing_status']]}")
+            item.setData(Qt.UserRole, row["id"])
+            item.setToolTip(item.text())
+            if row["thumbnail"]:
+                pixmap = QPixmap()
+                pixmap.loadFromData(row["thumbnail"])
+                item.setIcon(QIcon(pixmap))
+            self.photo_grid.addItem(item)
+            item.setSelected(row["id"] in selected)
+        self.photo_grid.blockSignals(False)
         self.reveal_selection()
         self.update_actions()
 

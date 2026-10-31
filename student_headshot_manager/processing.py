@@ -11,7 +11,7 @@ import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
-PIPELINE_VERSION = "local-chroma-key-2"
+PIPELINE_VERSION = "local-chroma-key-3"
 MAX_PIXELS = 40_000_000
 MAX_BYTES = 250 * 1024 * 1024
 RAW_EXTENSIONS = {".cr2", ".cr3", ".nef"}
@@ -25,10 +25,10 @@ class ProcessingSettings:
     saturation_high: int = 255
     value_low: int = 40
     value_high: int = 255
-    noise_radius: int = 1
+    noise_radius: int = 0
     holes_radius: int = 2
-    edge_shift: int = -1
-    feather: float = 1.2
+    edge_shift: int = 0
+    feather: float = 0.8
     spill_strength: float = 0.65
     spill_width: int = 8
     grey: int = 180
@@ -145,16 +145,42 @@ def kernel(radius):
     return cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (radius * 2 + 1, radius * 2 + 1))
 
 
+def border_connected(mask):
+    """Return only mask regions connected to an image edge.
+
+    Flood filling the candidate background from the frame protects enclosed green
+    details, such as spill inside hair or green clothing, from automatic removal.
+    Operators can still remove enclosed background openings in the mask editor.
+    """
+    work = mask.copy()
+    height, width = work.shape
+    seeds = (
+        ((x, 0) for x in range(width)),
+        ((x, height - 1) for x in range(width)),
+        ((0, y) for y in range(1, height - 1)),
+        ((width - 1, y) for y in range(1, height - 1)),
+    )
+    for edge in seeds:
+        for x, y in edge:
+            if work[y, x] == 255:
+                cv2.floodFill(work, None, (x, y), 128, flags=8)
+    return np.where(work == 128, 255, 0).astype(np.uint8)
+
+
 def make_mask(rgb, settings):
     settings.validate()
     hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
-    green = cv2.inRange(hsv,
-                       (settings.hue_low, settings.saturation_low, settings.value_low),
-                       (settings.hue_high, settings.saturation_high, settings.value_high))
+    green_candidates = cv2.inRange(
+        hsv,
+        (settings.hue_low, settings.saturation_low, settings.value_low),
+        (settings.hue_high, settings.saturation_high, settings.value_high),
+    )
+    green = border_connected(green_candidates)
+    protected_green = int(np.count_nonzero(green_candidates) - np.count_nonzero(green))
     foreground = cv2.bitwise_not(green)
     raw_area = int(np.count_nonzero(foreground))
     green_fraction = float(np.count_nonzero(green) / green.size)
-    del hsv, green
+    del hsv, green, green_candidates
     if settings.noise_radius:
         foreground = cv2.morphologyEx(foreground, cv2.MORPH_OPEN, kernel(settings.noise_radius))
     if settings.holes_radius:
@@ -164,6 +190,12 @@ def make_mask(rgb, settings):
     elif settings.edge_shift > 0:
         foreground = cv2.dilate(foreground, kernel(settings.edge_shift))
     diagnostics = inspect_mask(foreground, green_fraction, raw_area)
+    diagnostics["protected_green_fraction"] = protected_green / foreground.size
+    if protected_green > foreground.size * 0.002:
+        diagnostics["issues"].append(
+            "Enclosed green detail was kept to protect hair and clothing. "
+            "Remove any enclosed background openings manually."
+        )
     alpha = (cv2.GaussianBlur(foreground, (0, 0), settings.feather)
              if settings.feather > 0 else foreground.copy())
     return foreground, alpha, diagnostics

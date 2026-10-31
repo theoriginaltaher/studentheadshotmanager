@@ -350,7 +350,7 @@ class ReviewPage(QWidget):
             diagnostics = json.loads(job["diagnostics_json"])
             lines.extend(diagnostics["issues"])
             lines.append(f"Foreground: {diagnostics['foreground_fraction']:.1%}. These checks cannot certify separation quality.")
-        lines.append("Inspect hair, clothing, edge halos, and holes at 100% in the Mask tab. Green clothing can be removed by chroma keying.")
+        lines.append("Inspect hair, clothing, edge halos, and holes at 100% in the Mask tab. Enclosed green detail is kept for safety and may need manual removal.")
         self.diagnostics.setPlainText("\n".join(lines))
 
     def update_actions(self):

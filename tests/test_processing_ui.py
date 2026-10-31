@@ -2,6 +2,7 @@ from dataclasses import asdict, replace
 import threading
 import time
 
+import pytest
 from PySide6.QtCore import QTimer
 from PySide6.QtGui import QImage
 from PySide6.QtWidgets import QInputDialog
@@ -10,7 +11,7 @@ from student_headshot_manager import processing
 from student_headshot_manager.processing import ProcessingSettings
 from student_headshot_manager.processing_repository import ProcessingRepository
 from student_headshot_manager.processing_worker import ProcessingController
-from student_headshot_manager.ui.image_view import ImageView
+from student_headshot_manager.ui.image_view import ImageView, MaskPaintCanvas
 from student_headshot_manager.ui.main_window import MainWindow
 
 
@@ -97,6 +98,34 @@ def test_review_controls_mask_zoom_flags_and_dirty_settings(qapp, db, processing
         window.capture_page.controller.stop()
         wait_for(qapp, lambda: not page.controller.is_running())
         window.close()
+
+
+def test_mask_stroke_preserves_zoom_and_view_center(qapp):
+    canvas = MaskPaintCanvas()
+    canvas.resize(320, 240)
+    original = QImage(800, 600, QImage.Format_RGB888)
+    original.fill(0x504030)
+    mask = QImage(800, 600, QImage.Format_Grayscale8)
+    mask.fill(0)
+    canvas.show()
+    qapp.processEvents()
+    try:
+        canvas.set_images(original, mask)
+        canvas.actual_size()
+        canvas.zoom(2)
+        canvas.centerOn(620, 430)
+        qapp.processEvents()
+        before_transform = canvas.transform()
+        before_center = canvas.mapToScene(canvas.viewport().rect().center())
+        canvas.paint_segment((610, 420), (630, 440))
+        qapp.processEvents()
+        after_center = canvas.mapToScene(canvas.viewport().rect().center())
+        assert canvas.transform() == before_transform
+        assert after_center.x() == pytest.approx(before_center.x(), abs=1)
+        assert after_center.y() == pytest.approx(before_center.y(), abs=1)
+        assert canvas.mask.pixelColor(620, 430).value() == 255
+    finally:
+        canvas.close()
 
 
 def test_late_result_cannot_replace_preview_for_changed_settings(qapp, db, processing_capture, monkeypatch):

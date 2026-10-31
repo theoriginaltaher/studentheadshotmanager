@@ -23,10 +23,13 @@ class ProcessingSettingsPanel(QWidget):
         layout = QVBoxLayout(self)
         layout.setContentsMargins(10, 4, 10, 10)
         layout.setSpacing(12)
-        preset = QPushButton("Even green screen preset")
+        preset = QPushButton("Hair-safe green screen preset")
         preset.clicked.connect(lambda: self.set_values(ProcessingSettings(), notify=True))
         layout.addWidget(preset)
-        hint = QLabel("A starting point for evenly lit green screens. Inspect the mask; this is not automatic subject detection.")
+        hint = QLabel(
+            "Conservative starting point that protects enclosed hair and clothing detail. "
+            "Inspect the mask and remove enclosed background openings manually."
+        )
         hint.setWordWrap(True)
         hint.setObjectName("muted")
         layout.addWidget(hint)

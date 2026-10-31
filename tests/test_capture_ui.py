@@ -53,12 +53,12 @@ def test_capture_selection_thumbnail_counts_and_confirm(qapp, db, tmp_path):
         panel.student_table.selectRow(student_row)
         assert panel.assign_button.isEnabled()
         photo_id = panel.selected_photo_ids()[0]
-        panel.assign_selected()
+        panel.shortcuts["assign"].trigger()
         wait_for(qapp, lambda: repo.get(photo_id)["student_record_id"] == first and not panel.busy)
         panel.table.selectRow(next(row for row in range(panel.table.rowCount())
                                    if panel.table.item(row, 0).data(Qt.UserRole) == photo_id))
         assert panel.confirm_button.isEnabled()
-        panel.confirm_selected()
+        panel.shortcuts["confirm"].trigger()
         assert not panel.confirm_button.isEnabled()
         wait_for(qapp, lambda: repo.get(photo_id)["processing_status"] == "imported" and not panel.busy)
         assert "1 archived" in panel.photo_count.text()
@@ -126,6 +126,31 @@ def test_photo_search_class_filter_and_sort(qapp, db, tmp_path):
 
         panel.photo_sort.setCurrentIndex(panel.photo_sort.findData("class"))
         assert [panel.table.item(row, 1).text() for row in range(2)] == ["z-last.jpg", "a-first.jpg"]
+
+        panel.table.clearSelection()
+        panel.table.setCurrentCell(-1, -1)
+        panel.move_photo(1)
+        assert panel.table.currentRow() == 0
+        panel.move_photo(1)
+        assert panel.table.currentRow() == 1
+        panel.student_table.clearSelection()
+        panel.student_table.setCurrentCell(-1, -1)
+        panel.move_student(1)
+        assert panel.student_table.currentRow() == 0
+        assert panel.shortcuts["focus_photos"].shortcut().toString() == "Ctrl+F"
+        assert panel.shortcuts["focus_students"].shortcut().toString() == "Ctrl+K"
+
+        panel.photo_view.setCurrentIndex(panel.photo_view.findData("grid"))
+        assert panel.photo_views.currentWidget() is panel.photo_grid
+        assert panel.photo_grid.count() == 2
+        panel.thumbnail_slider.setValue(208)
+        assert panel.photo_grid.iconSize().width() == 208
+        assert panel.table.iconSize().width() == 208
+        panel.photo_grid.clearSelection()
+        panel.photo_grid.setCurrentRow(0)
+        assert len(panel.selected_photo_ids()) == 1
+        panel.move_photo(1)
+        assert panel.photo_grid.currentRow() == 1
     finally:
         panel.controller.stop()
         wait_for(qapp, lambda: not panel.controller.is_running())

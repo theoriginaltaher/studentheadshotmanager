@@ -7,7 +7,8 @@ import pytest
 
 from samples.generate_processing_samples import make_sample
 from student_headshot_manager.processing import (
-    ProcessingSettings, composite_portrait, make_mask, process_image, suppress_spill,
+    ProcessingSettings, border_connected, composite_portrait, make_mask, process_image,
+    suppress_spill,
 )
 import student_headshot_manager.processing as processing
 
@@ -93,7 +94,7 @@ def test_noise_holes_shift_and_feather_controls():
     rgb = np.full((100, 100, 3), (0, 200, 0), dtype=np.uint8)
     rgb[25:75, 25:75] = (190, 110, 80)
     rgb[10, 10] = (190, 110, 80)
-    rgb[50, 50] = (0, 200, 0)
+    rgb[50, :51] = (0, 200, 0)
     baseline, _, _ = make_mask(rgb, clean_settings())
     cleaned, _, _ = make_mask(rgb, replace(clean_settings(), noise_radius=1, holes_radius=2))
     assert baseline[10, 10] == 255 and cleaned[10, 10] == 0
@@ -103,6 +104,35 @@ def test_noise_holes_shift_and_feather_controls():
     assert np.count_nonzero(eroded) < np.count_nonzero(baseline) < np.count_nonzero(dilated)
     _, feathered, _ = make_mask(rgb, replace(clean_settings(), feather=2))
     assert np.any((feathered > 0) & (feathered < 255))
+
+
+def test_only_edge_connected_green_is_removed_automatically():
+    rgb = np.full((100, 100, 3), (0, 200, 0), dtype=np.uint8)
+    rgb[20:80, 20:80] = (190, 110, 80)
+    rgb[45:55, 45:55] = (0, 200, 0)
+    foreground, _, diagnostics = make_mask(rgb, clean_settings())
+    assert foreground[0, 0] == 0
+    assert foreground[50, 50] == 255
+    assert diagnostics["protected_green_fraction"] == pytest.approx(0.01)
+    assert any("Enclosed green detail" in issue for issue in diagnostics["issues"])
+
+
+def test_border_connected_finds_separate_background_regions():
+    candidates = np.zeros((20, 20), dtype=np.uint8)
+    candidates[:, :5] = 255
+    candidates[:, 15:] = 255
+    candidates[8:12, 8:12] = 255
+    connected = border_connected(candidates)
+    assert connected[10, 2] == connected[10, 17] == 255
+    assert connected[10, 10] == 0
+
+
+def test_default_preset_does_not_erode_single_pixel_hair_detail():
+    rgb = np.full((80, 80, 3), (0, 200, 0), dtype=np.uint8)
+    rgb[25:70, 25:55] = (60, 40, 30)
+    rgb[15:26, 38] = (60, 40, 30)
+    foreground, _, _ = make_mask(rgb, ProcessingSettings())
+    assert foreground[15:26, 38].all()
 
 
 def test_spill_suppression_is_confined_to_edge_band():
@@ -151,11 +181,12 @@ def test_bad_separation_is_blocking_not_silently_approved(tmp_path, kind):
     assert output.diagnostics["issues"]
 
 
-def test_large_enclosed_hole_is_flagged(tmp_path):
+def test_large_enclosed_green_area_is_preserved_and_flagged(tmp_path):
     path = tmp_path / "green-clothing.jpg"
     make_sample("green-clothing", (240, 320)).save(path, quality=98, subsampling=0)
     output = process_image(path, clean_settings())
-    assert any("transparent hole" in issue for issue in output.diagnostics["issues"])
+    assert output.mask.getpixel((120, 192)) > 0
+    assert any("Enclosed green detail" in issue for issue in output.diagnostics["issues"])
 
 
 @pytest.mark.parametrize("changes", [

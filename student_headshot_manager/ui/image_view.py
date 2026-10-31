@@ -17,6 +17,7 @@ class ZoomCanvas(QGraphicsView):
         self.setRenderHint(QPainter.SmoothPixmapTransform)
         self.fit_mode = True
         self.has_image = False
+        self.image_item = None
         if checker:
             tile = QPixmap(24, 24)
             tile.fill(QColor("#666666"))
@@ -28,14 +29,28 @@ class ZoomCanvas(QGraphicsView):
         else:
             self.setBackgroundBrush(QColor("#181818"))
 
-    def set_image(self, image):
-        self.scene().clear()
+    def set_image(self, image, preserve_view=False):
+        had_image = self.has_image and self.image_item is not None
+        previous_fit_mode = self.fit_mode
+        previous_transform = self.transform()
+        previous_center = self.mapToScene(self.viewport().rect().center()) if had_image else None
         self.has_image = image is not None and not image.isNull()
         if self.has_image:
-            item = self.scene().addPixmap(QPixmap.fromImage(image))
-            self.scene().setSceneRect(item.boundingRect())
-            self.fit_image()
+            pixmap = QPixmap.fromImage(image)
+            if self.image_item is None:
+                self.image_item = self.scene().addPixmap(pixmap)
+            else:
+                self.image_item.setPixmap(pixmap)
+            self.scene().setSceneRect(self.image_item.boundingRect())
+            if preserve_view and had_image:
+                self.setTransform(previous_transform)
+                self.centerOn(previous_center)
+                self.fit_mode = previous_fit_mode
+            else:
+                self.fit_image()
         else:
+            self.scene().clear()
+            self.image_item = None
             self.scene().setSceneRect(0, 0, 1, 1)
 
     def fit_image(self):
@@ -186,7 +201,6 @@ class MaskPaintCanvas(ZoomCanvas):
         super().mouseReleaseEvent(event)
 
     def render_overlay(self, keep_transform=False):
-        previous = self.transform()
         if self.mask is None:
             self.set_image(None)
             return
@@ -204,10 +218,7 @@ class MaskPaintCanvas(ZoomCanvas):
             painter.setOpacity(0.46)
             painter.drawImage(0, 0, overlay)
             painter.end()
-        self.set_image(display)
-        if keep_transform:
-            self.setTransform(previous)
-            self.fit_mode = False
+        self.set_image(display, preserve_view=keep_transform)
 
     def mask_png(self):
         if self.mask is None:
