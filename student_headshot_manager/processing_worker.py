@@ -147,6 +147,9 @@ class ProcessingController(QObject):
                     elif action == "approve":
                         service.approve(*args)
                         payload = {}
+                    elif action == "take_approve":
+                        service.approve(*args)
+                        payload = {"job": dict(service.repo.get(args[0]))}
                     else:
                         payload = {}
                     self.done.emit(action, token, True, payload)

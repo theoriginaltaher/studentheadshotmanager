@@ -94,6 +94,52 @@ def test_navigation_shortcuts_preview_and_no_automatic_selection(qapp,db,process
         wait_for(qapp,lambda:not window.review_page.controller.is_running() and not window.capture_page.controller.is_running())
         window.close()
 
+def test_take_browser_approves_result_without_processing_tools(qapp,db,processing_capture):
+    capture,*_=processing_capture
+    service=ProcessingService(db)
+    job,_,_=service.process(capture,replace(ProcessingSettings(),canvas_width=180,canvas_height=240))
+    assert job['status']!='approved'
+    window=MainWindow(db); window.show(); window.navigate(2); browser=window.review_workspace.browser
+    try:
+        wait_for(qapp,lambda:browser.payload is not None)
+        assert browser.approve_button.isEnabled() and browser.approve_button.text()=='Approve result'
+        assert window.review_workspace.currentWidget() is browser
+        browser.students.setFocus(); window.activateWindow(); qapp.processEvents()
+        QTest.keyClick(browser.students,Qt.Key_A,Qt.ControlModifier|Qt.ShiftModifier)
+        wait_for(qapp,lambda:browser.approve_button.text()=='Approved')
+        assert service.repo.get(job['id'])['status']=='approved'
+        assert not browser.approve_button.isEnabled()
+        assert window.review_workspace.currentWidget() is browser
+        assert ReviewRepository(db).students()[0]['final_capture_id'] is None
+    finally:
+        window.review_page.controller.stop(); window.capture_page.controller.stop()
+        wait_for(qapp,lambda:not window.review_page.controller.is_running() and not window.capture_page.controller.is_running())
+        window.close()
+
+
+def test_take_browser_requires_acknowledging_warnings(qapp,db,processing_capture,monkeypatch):
+    from PySide6.QtWidgets import QMessageBox
+    capture,*_=processing_capture
+    service=ProcessingService(db)
+    job,_,_=service.process(capture,replace(ProcessingSettings(),canvas_width=180,canvas_height=240))
+    service.repo.flag(capture,'Check the hair edge.')
+    window=MainWindow(db); window.show(); window.navigate(2); browser=window.review_workspace.browser
+    try:
+        wait_for(qapp,lambda:browser.payload is not None)
+        monkeypatch.setattr(QMessageBox,'exec',lambda self:None)
+        browser.approve_result()
+        qapp.processEvents()
+        assert service.repo.get(job['id'])['status']!='approved'
+        monkeypatch.setattr(QMessageBox,'clickedButton',lambda self:self.buttons()[0] if self.buttonRole(self.buttons()[0])==QMessageBox.AcceptRole else self.buttons()[1])
+        browser.approve_result()
+        wait_for(qapp,lambda:browser.approve_button.text()=='Approved')
+        assert service.repo.get(job['id'])['status']=='approved'
+    finally:
+        window.review_page.controller.stop(); window.capture_page.controller.stop()
+        wait_for(qapp,lambda:not window.review_page.controller.is_running() and not window.capture_page.controller.is_running())
+        window.close()
+
+
 @pytest.mark.parametrize('flag',['Retake required','Processing adjustment','Manual review'])
 def test_every_flag_persists_and_resolving_never_selects(db,processing_capture,flag):
     capture,*_=processing_capture; repo=ReviewRepository(db); student=repo.students()[0]['id']

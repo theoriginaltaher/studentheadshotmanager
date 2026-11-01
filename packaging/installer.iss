@@ -1,4 +1,4 @@
-#define AppVersion "1.3.3"
+#define AppVersion "1.3.4"
 #define AppSourceDir GetEnv("SHM_APP_SOURCE_DIR")
 #if AppSourceDir == ""
   #define AppSourceDir "..\dist\StudentHeadshotManager"

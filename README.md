@@ -151,6 +151,11 @@ previous choice. Browsing, processing and processing approval never choose a fin
 take automatically. **Clear selection** removes the choice. Final take selection is
 independent of processing approval and does not certify that processing is complete.
 
+**Approve result** approves the take's processed result without opening Processing
+tools. It uses the same checks: warnings or a manual-review flag must be acknowledged
+in a confirmation dialog, and blocked separations cannot be approved. It does not
+mark the take selected.
+
 Choose **Retake required**, **Processing adjustment**, or **Manual review**, then
 **Save flag** to flag a take. A flag clears that take's final selection and prevents
 reselection until the operator chooses **No flag / resolved**. Resolving a flag
@@ -165,7 +170,7 @@ a student can have a selected take and another take requiring attention. Student
 navigation follows the currently filtered list and stops at either end.
 
 Review-browser shortcuts: **Alt+Left** previous student, **Alt+Right** next student,
-**Ctrl+Return** mark selected, **Ctrl+O** open full resolution. Double-clicking a take
+**Ctrl+Return** mark selected, **Ctrl+Shift+A** approve result, **Ctrl+O** open full resolution. Double-clicking a take
 also opens full resolution. These shortcuts apply only inside Students & takes.
 
 ## Local green-screen processing

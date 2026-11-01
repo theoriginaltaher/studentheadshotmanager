@@ -1,10 +1,11 @@
 """Student-first take review, alongside the existing processing editor."""
+import json
 import sqlite3
 from pathlib import Path
 from PySide6.QtCore import Qt, QSize
 from PySide6.QtGui import QAction, QIcon, QPixmap, QKeySequence
 from PySide6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, QComboBox,
-    QPushButton, QListWidget, QListWidgetItem, QSplitter, QTabWidget, QDialog)
+    QPushButton, QListWidget, QListWidgetItem, QSplitter, QTabWidget, QDialog, QMessageBox)
 from ..review_repository import ReviewRepository, FILTERS, FLAGS
 from .image_view import ImageView
 
@@ -40,7 +41,7 @@ class TakeBrowser(QWidget):
         self.previous = QPushButton('Previous student'); self.previous.clicked.connect(lambda: self.move_student(-1))
         self.next = QPushButton('Next student'); self.next.clicked.connect(lambda: self.move_student(1))
         nav.addWidget(self.previous); nav.addWidget(self.next)
-        hint = QLabel('Alt+Left / Right · Ctrl+Return selects · Ctrl+O opens'); hint.setWordWrap(True); nav.addWidget(hint,1)
+        hint = QLabel('Alt+Left / Right · Ctrl+Return selects · Ctrl+Shift+A approves · Ctrl+O opens'); hint.setWordWrap(True); nav.addWidget(hint,1)
         layout.addLayout(nav)
         split = QSplitter(Qt.Horizontal)
         self.students = QListWidget(); self.students.setAccessibleName('Students and review status'); self.students.setMinimumWidth(180)
@@ -63,10 +64,11 @@ class TakeBrowser(QWidget):
         split.addWidget(right); split.setSizes([220,700]); split.setChildrenCollapsible(False); layout.addWidget(split,1)
         actions = QHBoxLayout()
         self.select_button = QPushButton('Mark selected'); self.select_button.setObjectName('primary'); self.select_button.clicked.connect(self.select_take)
+        self.approve_button = QPushButton('Approve result'); self.approve_button.clicked.connect(self.approve_result)
         self.clear_button = QPushButton('Clear selection'); self.clear_button.clicked.connect(self.clear_selection)
         self.open_button = QPushButton('Open full resolution'); self.open_button.clicked.connect(self.open_image)
         self.process_button = QPushButton('Adjust processing'); self.process_button.clicked.connect(self.edit_processing)
-        for button in (self.select_button,self.clear_button,self.open_button,self.process_button): actions.addWidget(button)
+        for button in (self.select_button,self.approve_button,self.clear_button,self.open_button,self.process_button): actions.addWidget(button)
         layout.addLayout(actions)
         flags = QHBoxLayout(); flags.addWidget(QLabel('Take flag'))
         self.flag = QComboBox(); self.flag.addItems(['No flag / resolved',*FLAGS[1:]]); flags.addWidget(self.flag,1)
@@ -78,7 +80,7 @@ class TakeBrowser(QWidget):
         self.grid.currentItemChanged.connect(self.take_changed)
         self.grid.itemDoubleClicked.connect(lambda _: self.open_image())
         processor.controller.done.connect(self.on_done)
-        for shortcut, callback in [('Alt+Left',lambda:self.move_student(-1)),('Alt+Right',lambda:self.move_student(1)),('Ctrl+Return',self.select_take),('Ctrl+O',self.open_image)]:
+        for shortcut, callback in [('Alt+Left',lambda:self.move_student(-1)),('Alt+Right',lambda:self.move_student(1)),('Ctrl+Return',self.select_take),('Ctrl+Shift+A',self.approve_result),('Ctrl+O',self.open_image)]:
             action=QAction(self); action.setShortcut(QKeySequence(shortcut)); action.setShortcutContext(Qt.WidgetWithChildrenShortcut)
             action.triggered.connect(callback); self.addAction(action)
         self.refresh()
@@ -144,7 +146,7 @@ class TakeBrowser(QWidget):
         self.take_changed()
 
     def take_changed(self,*_):
-        self.token-=1; self.payload=None
+        self.token-=1; self.payload=None; self.job=None; self.update_approve()
         for view in self.views.values(): view.set_image(None)
         take=self.take(); accepted=bool(take and take['processing_status']=='imported')
         self.select_button.setEnabled(accepted and not take['review_flag'])
@@ -158,6 +160,13 @@ class TakeBrowser(QWidget):
     def on_done(self,action,token,success,payload):
         if action == 'worker':
             self.message.setText('Preview worker unavailable: ' + payload['error'])
+            return
+        if action == 'take_approve' and token == self.token:
+            if success:
+                self.job = payload['job']; self.update_approve()
+                self.message.setText('Result approved. Choose the final take with Mark selected.')
+            else:
+                self.update_approve(); self.message.setText('Unable to approve: ' + payload['error'])
             return
         if action not in ('take_preview','take_full') or token!=self.token: return
         if not success:
@@ -174,8 +183,40 @@ class TakeBrowser(QWidget):
             dialog.destroyed.connect(lambda: self.dialogs.remove(dialog) if dialog in self.dialogs else None)
             dialog.show(); return
         for key,view in self.views.items(): view.set_image(payload.get(key))
-        self.message.setText('Final take choice is separate from processing approval.' if payload['job'] else
-                             'No current processed outputs. Use Adjust processing to create the cutout and composite.')
+        self.job = payload['job']; self.update_approve()
+        if not self.job:
+            self.message.setText('No current processed outputs. Use Adjust processing to create the cutout and composite.')
+        elif self.job['status'] == 'approved':
+            self.message.setText('Result approved. Final take choice is separate from processing approval.')
+        elif json.loads(self.job['diagnostics_json'] or '{}').get('blocking'):
+            self.message.setText('Separation failed for this result. Use Adjust processing to fix it before approval.')
+        else:
+            self.message.setText('Result awaiting approval. Check the grey composite, then Approve result.')
+
+    def update_approve(self):
+        job = self.job
+        ready = bool(job and job['status'] in ('awaiting_review','needs_review') and job['diagnostics_json']
+                     and not json.loads(job['diagnostics_json'])['blocking'])
+        self.approve_button.setEnabled(ready)
+        self.approve_button.setText('Approved' if job and job['status'] == 'approved' else 'Approve result')
+
+    def approve_result(self):
+        job = self.job
+        if not job or not self.approve_button.isEnabled(): return
+        diagnostics = json.loads(job['diagnostics_json'])
+        review = self.processor.repo.review(job['capture_id'])
+        acknowledged = False
+        if diagnostics['issues'] or (review and review['manual_review']):
+            box = QMessageBox(self); box.setWindowTitle('Approve inspected result'); box.setTextFormat(Qt.PlainText)
+            box.setText('This photograph has warnings or a manual-review flag:\n\n' + '\n'.join(diagnostics['issues'] or ['Manual review requested.']) +
+                        '\n\nApprove only after inspecting the subject and edges. Approval clears the manual flag.')
+            approve = box.addButton('Approve inspected result', QMessageBox.AcceptRole)
+            cancel = box.addButton(QMessageBox.Cancel); box.setDefaultButton(cancel)
+            box.exec()
+            if box.clickedButton() != approve: return
+            acknowledged = True
+        self.approve_button.setEnabled(False); self.message.setText('Approving result…')
+        self.processor.controller.command('take_approve', self.token, job['id'], acknowledged)
 
     def mutate(self,callback):
         try: callback()
