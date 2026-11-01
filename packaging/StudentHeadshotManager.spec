@@ -10,7 +10,7 @@ a=Analysis([str(root/'app.py')],pathex=[str(root)],
         (str(root/'packaging'/'application-source.zip'),'source'),
         (str(root/'README.md'),'docs'),(str(root/'CAMERA_SETUP.md'),'docs'),
         (str(root/'THIRD_PARTY_NOTICES.md'),'docs')],
- hiddenimports=['watchdog.observers.read_directory_changes','PySide6.QtPrintSupport'],
+ hiddenimports=['watchdog.observers.read_directory_changes','PySide6.QtPrintSupport','onnxruntime'],
  hookspath=[],hooksconfig={},runtime_hooks=[],
  excludes=['pytest','tkinter','PySide6.QtWebEngineCore','PySide6.QtWebEngineWidgets','PySide6.QtQml','PySide6.QtQuick'],
  noarchive=False)

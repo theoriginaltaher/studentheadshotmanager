@@ -108,4 +108,4 @@ class ProcessingRepository:
     def recover_interrupted(self):
         with self.db.transaction():
             self.db.connection.execute("""UPDATE processing_jobs SET status='failed',
-                error_message='Processing was interrupted. Run Process locally to retry.',finished_at=? WHERE status='running'""", (utc_now(),))
+                error_message='Processing was interrupted. Run Process / rebuild mask to retry.',finished_at=? WHERE status='running'""", (utc_now(),))

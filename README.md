@@ -172,13 +172,15 @@ also opens full resolution. These shortcuts apply only inside Students & takes.
 
 1. Confirm assignments in **Assign**, then open **Review → Processing tools**.
 2. Click **Hair-safe green screen preset** for a conservative starting point, or adjust the settings.
-3. Choose **Process all assigned** for the batch, or **Process locally** for one photograph.
+3. Choose **Process all assigned** for the batch, or **Process / rebuild mask** for one photograph.
    Processing runs in a background queue using the archived
-   original. No images are uploaded and no cloud service or downloaded model is used.
+   original. No images are uploaded and no cloud service is used; the portrait model
+   ships inside the installer and runs on the CPU.
 4. Inspect **Results** and **Edit mask**. Paint with Keep or Remove at full mask
    resolution, then apply the edits to rebuild the cutout and portrait.
 5. In **Position and size**, drag the portrait to move it and drag its lower-right
-   handle to resize it. Reprocess after layout changes.
+   handle to resize it, then click **Apply framing**. Framing reuses the saved cutout
+   and mask, so manual mask edits are kept and the mask is not rebuilt.
 6. Set the background with RGB, Hex, or HSL values. The default delivery is a
    1080 × 1080 square JPEG at 300 DPI.
 7. **Approve result** only after inspection, or **Flag manual review** with a note.
@@ -186,6 +188,10 @@ also opens full resolution. These shortcuts apply only inside Students & takes.
    **Open output folder** opens the saved local files.
 
 HSV thresholds use OpenCV hue units 0–179 and saturation/brightness units 0–255.
+Photographs of 1 megapixel or more also run a bundled U²-Net-P portrait model. It
+only rescues green-tinted spill on the head and shoulders and drops non-green objects
+far from the person, such as light stands; it never removes non-green pixels near the
+subject, so hair it misses is still kept. Diagnostics record the extractor used.
 Only green regions connected to a frame edge are removed automatically. Enclosed
 green regions are retained to protect hair and clothing; remove any true background
 openings that are fully surrounded by the subject in **Edit mask**.
@@ -219,7 +225,7 @@ key includes source content, every processing setting, and pipeline version. Val
 cached files are reused across restarts; missing or changed outputs are regenerated.
 Changing the Processed folder affects new outputs; existing cache paths stay valid.
 Storage failures and interrupted jobs remain visible and can be retried with
-**Process locally**. Closing the app waits for in-flight work without blocking the GUI.
+**Process / rebuild mask**. Closing the app waits for in-flight work without blocking the GUI.
 
 Every new result requires explicit operator approval. Heuristics detect empty or
 almost-full foregrounds, disconnected regions, holes, and other suspicious masks.
@@ -384,7 +390,7 @@ Photo files are never moved by database restore; restore their backups to their
 recorded paths separately. Renamed photo folders require fixing paths/configuration.
 
 After interruption, Capture and Review recover unfinished jobs as retryable errors.
-Resume the watcher or click Retry import / Process locally after resolving the cause.
+Resume the watcher or click Retry import / Process / rebuild mask after resolving the cause.
 Exports may leave a partial delivery with error reports; rerun into a new folder.
 For missing DLL/Qt plugin errors, reinstall or re-extract the complete distribution;
 do not download DLLs from third-party sites. A denied Program Files install requires

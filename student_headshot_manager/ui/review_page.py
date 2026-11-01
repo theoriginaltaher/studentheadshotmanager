@@ -121,18 +121,21 @@ class ReviewPage(QWidget):
         self.workspace_tabs.addTab(scroll, "Processing settings")
         layout.addWidget(self.workspace_tabs, 1)
         actions = QHBoxLayout()
-        self.process_button = QPushButton("Process locally")
+        self.process_button = QPushButton("Process / rebuild mask")
         self.process_button.setObjectName("primary")
         self.process_button.clicked.connect(self.process)
         self.approve_button = QPushButton("Approve result")
         self.approve_button.clicked.connect(self.approve)
         self.save_mask_button = QPushButton("Apply mask edits")
         self.save_mask_button.clicked.connect(self.apply_mask)
+        self.save_framing_button = QPushButton("Apply framing")
+        self.save_framing_button.clicked.connect(self.apply_framing)
         self.flag_button = QPushButton("Flag manual review")
         self.flag_button.clicked.connect(self.flag)
         self.open_button = QPushButton("Open output folder")
         self.open_button.clicked.connect(self.open_outputs)
-        for button in (self.process_button, self.save_mask_button, self.approve_button, self.flag_button, self.open_button):
+        for button in (self.process_button, self.save_mask_button, self.save_framing_button,
+                       self.approve_button, self.flag_button, self.open_button):
             actions.addWidget(button)
         actions.addStretch()
         layout.addLayout(actions)
@@ -208,7 +211,7 @@ class ReviewPage(QWidget):
         self.clear_outputs()
         try:
             self.settings_panel.settings()
-            self.status.setText("Settings changed. Click Process locally to update the previews.")
+            self.status.setText("Settings changed. Click Process / rebuild mask to update the previews.")
         except ValueError as exc:
             self.status.setText(str(exc))
         self.update_actions()
@@ -259,8 +262,21 @@ class ReviewPage(QWidget):
     def transform_changed(self, scale, offset_x, offset_y):
         self.settings_panel.set_transform(scale, offset_x, offset_y, notify=False)
         self.layout_dirty = True
-        self.current_job = None
-        self.status.setText("Portrait position changed. Process locally to rebuild the 1080 × 1080 output.")
+        self.status.setText("Portrait position changed. Apply framing to save it without rebuilding the mask.")
+        self.update_actions()
+
+    def apply_framing(self):
+        if not self.current_job or not self.layout_dirty or self.busy:
+            return
+        try:
+            settings = self.settings_panel.settings()
+        except ValueError as exc:
+            self.status.setText(str(exc))
+            return
+        self.token += 1
+        self.busy = True
+        self.status.setText("Saving the portrait framing without rebuilding the mask…")
+        self.controller.command("reframe", self.token, self.current_job["id"], asdict(settings))
         self.update_actions()
 
     def apply_mask(self):
@@ -282,7 +298,7 @@ class ReviewPage(QWidget):
             self.status.setText(message)
 
     def on_done(self, action, token, success, payload):
-        if action in ("process", "process_batch", "apply_mask", "approve", "flag", "worker"):
+        if action in ("process", "process_batch", "apply_mask", "reframe", "approve", "flag", "worker"):
             self.busy = False
         if action == "worker":
             self.loading = False
@@ -293,7 +309,7 @@ class ReviewPage(QWidget):
                 self.status.setText(f"Unable to {action}: {payload['error']}")
                 if action in ("process", "approve"):
                     self.clear_outputs()
-            elif action in ("preview", "process", "apply_mask", "process_batch"):
+            elif action in ("preview", "process", "apply_mask", "reframe", "process_batch"):
                 if action == "process_batch" and not payload.get("job"):
                     failures = payload.get("failures", [])
                     self.status.setText(f"Batch finished with {len(failures):,} failure(s) and no completed outputs.")
@@ -305,7 +321,8 @@ class ReviewPage(QWidget):
                 for name, view in (("portrait", self.after), ("cutout", self.cutout)):
                     view.set_image(payload.get(name))
                 self.mask.set_images(payload.get("original"), payload.get("mask"))
-                self.layout_editor.set_portrait(payload.get("cutout"), self.settings_panel.settings())
+                self.layout_editor.set_portrait(payload.get("layout_cutout", payload.get("cutout")),
+                                                self.settings_panel.settings())
                 self.mask_dirty = False
                 self.layout_dirty = False
                 if action == "process_batch":
@@ -342,7 +359,7 @@ class ReviewPage(QWidget):
         else:
             latest = self.repo.latest(capture_id) if capture_id else None
             self.status.setText("Last processing attempt failed: " + latest["error_message"]
-                                if latest and latest["status"] == "failed" else "Original loaded. Adjust settings and click Process locally.")
+                                if latest and latest["status"] == "failed" else "Original loaded. Adjust settings and click Process / rebuild mask.")
         lines = []
         if review and review["manual_review"]:
             lines.append("Operator flag: " + review["note"])
@@ -363,6 +380,8 @@ class ReviewPage(QWidget):
         self.process_button.setEnabled(selected and valid and not self.busy and not self.loading)
         self.batch_button.setEnabled(bool(self.repo.photos()) and valid and not self.busy and not self.loading)
         self.save_mask_button.setEnabled(bool(self.current_job and self.mask_dirty and not self.busy and not self.loading))
+        self.save_framing_button.setEnabled(bool(self.current_job and self.layout_dirty and
+                                                 not self.mask_dirty and not self.busy and not self.loading))
         self.flag_button.setEnabled(selected and not self.busy)
         job = self.current_job
         can_approve = bool(job and job["status"] in ("awaiting_review", "needs_review", "approved") and

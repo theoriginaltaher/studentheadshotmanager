@@ -12,7 +12,7 @@ from PySide6.QtCore import QObject, QLockFile, Signal
 from PySide6.QtGui import QImage
 
 from .database import Database
-from .processing import ProcessingSettings, load_oriented
+from .processing import ProcessingSettings, load_oriented, trim_transparent
 from .processing_service import ProcessingService
 
 
@@ -46,6 +46,8 @@ def preview_payload(row, original_payload, cached=False, full=False):
             with Image.open(outputs[name]["path"]) as image:
                 image.load()
                 payload[name] = qt_image(image, None if full or name == "mask" else 2048)
+                if name == "cutout":
+                    payload["layout_cutout"] = qt_image(trim_transparent(image), 2048)
     return payload
 
 
@@ -126,6 +128,12 @@ class ProcessingController(QObject):
                         job_id, mask_data = args
                         row, original = service.apply_mask(
                             job_id, mask_data, lambda message: self.progress.emit(token, message))
+                        payload = preview_payload(row, original, False)
+                    elif action == "reframe":
+                        job_id, values = args
+                        settings = ProcessingSettings(**values).validate()
+                        row, original = service.reframe(
+                            job_id, settings, lambda message: self.progress.emit(token, message))
                         payload = preview_payload(row, original, False)
                     elif action in ("take_preview", "take_full"):
                         capture_id = args[0]

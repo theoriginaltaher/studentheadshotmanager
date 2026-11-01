@@ -135,6 +135,74 @@ def test_default_preset_does_not_erode_single_pixel_hair_detail():
     assert foreground[15:26, 38].all()
 
 
+def person_prior_scene():
+    """Green field with a head whose top is green-tinted spill, a hair strand the
+    model misses, and a non-green light stand far from the person."""
+    green = np.zeros((400, 300), dtype=np.uint8)
+    semantic = np.zeros((400, 300), dtype=np.uint8)
+    green[:, :] = 255
+    green[60:400, 90:210] = 0          # head and body, non-green
+    green[40:60, 100:200] = 255        # spill on top of hair, border-connected green
+    green[30:60, 205] = 0              # thin hair strand beside the head
+    green[0:400, 5:12] = 0             # light stand at the frame edge
+    semantic[40:400, 90:210] = 255
+    green[300:340, 120:180] = 255      # green visible through the lower body
+    return green, semantic
+
+
+def test_person_prior_rescues_head_spill_and_keeps_missed_hair():
+    green, semantic = person_prior_scene()
+    foreground = processing.merge_person_prior(green, semantic)
+    assert foreground[45, 150] == 255      # spill on hair kept
+    assert foreground[35, 205] == 255      # strand the model missed kept
+    assert foreground[200, 150] == 255
+
+
+def test_person_prior_drops_distant_objects_and_lower_body_green():
+    green, semantic = person_prior_scene()
+    foreground = processing.merge_person_prior(green, semantic)
+    assert not foreground[:, 5:12].any()   # light stand removed
+    assert foreground[320, 150] == 0       # green below the shoulders still keyed
+    assert foreground[0, 0] == 0
+
+
+def test_person_prior_never_removes_non_green_pixels_near_the_person():
+    green, semantic = person_prior_scene()
+    foreground = processing.merge_person_prior(green, semantic)
+    near_subject = (green == 0) & (np.abs(np.arange(300) - 150)[None, :] < 70)
+    assert foreground[near_subject].all()
+
+
+def test_person_prior_rejects_frames_without_a_person():
+    green, _ = person_prior_scene()
+    with pytest.raises(ValueError, match="could not find a person"):
+        processing.merge_person_prior(green, np.zeros_like(green))
+
+
+def test_large_frames_use_person_prior_and_small_frames_use_chroma(monkeypatch):
+    calls = []
+
+    def prior(rgb):
+        calls.append(rgb.shape)
+        mask = np.zeros(rgb.shape[:2], dtype=np.uint8)
+        mask[20:80, 20:80] = 255
+        return mask
+
+    monkeypatch.setattr(processing, "semantic_person_mask", prior)
+    rgb = np.full((100, 100, 3), (0, 200, 0), dtype=np.uint8)
+    rgb[20:80, 20:80] = (190, 110, 80)
+    _, _, diagnostics = make_mask(rgb, clean_settings())
+    assert calls and diagnostics["extractor"] == "u2netp-person-plus-chroma"
+
+
+def test_bundled_portrait_model_runs_locally():
+    rgb = np.full((1100, 1000, 3), (0, 200, 0), dtype=np.uint8)
+    rgb[250:1100, 300:700] = (190, 130, 100)
+    semantic = processing.semantic_person_mask(rgb)
+    assert semantic.shape == (1100, 1000) and semantic.dtype == np.uint8
+    assert semantic[700, 500] > semantic[50, 50]
+
+
 def test_spill_suppression_is_confined_to_edge_band():
     rgb = np.full((60, 60, 3), (80, 150, 80), dtype=np.uint8)
     binary = np.zeros((60, 60), dtype=np.uint8)

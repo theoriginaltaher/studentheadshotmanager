@@ -53,7 +53,7 @@ class ProcessingService:
         for row in self.repo.cached(capture_id, self.cache_key(source_hash, settings)):
             if self.outputs_valid(row):
                 return row
-            self.repo.fail(row["id"], "Cached output is missing or modified. Run Process locally to rebuild it.")
+            self.repo.fail(row["id"], "Cached output is missing or modified. Run Process / rebuild mask to rebuild it.")
         return None
 
     def output_root(self, source):
@@ -163,6 +163,39 @@ class ProcessingService:
         output.diagnostics["portrait_size"] = list(output.portrait.size)
         mask_hash = hashlib.sha256(mask_data).hexdigest()
         key = hashlib.sha256(f"{self.cache_key(digest, settings)}:manual:{mask_hash}".encode()).hexdigest()
+        new_job = self.repo.create(capture_id, settings, processing.PIPELINE_VERSION, str(source), digest, key)
+        try:
+            return self.save_output(new_job, capture_id, source, digest, settings, output, key), (data, source)
+        except Exception as exc:
+            self.repo.fail(new_job, str(exc))
+            raise
+
+    def reframe(self, job_id, settings, phase=lambda message: None):
+        """Create a reviewable portrait with new placement without rebuilding its mask."""
+        previous = self.repo.get(job_id)
+        capture_id = previous["capture_id"]
+        _, source = self.source(capture_id)
+        settings.validate()
+        data, digest = processing.read_original(source)
+        if digest != previous["source_hash"] or not self.outputs_valid(previous):
+            raise ValueError("The original or processed files changed. Rebuild the mask before adjusting framing.")
+        previous_outputs = json.loads(previous["outputs_json"])
+        phase("Applying the saved cutout to the new framing…")
+        with Image.open(previous_outputs["cutout"]["path"]) as opened:
+            opened.load()
+            cutout = opened.convert("RGBA")
+            icc_profile = opened.info.get("icc_profile")
+        with Image.open(previous_outputs["mask"]["path"]) as opened:
+            opened.load()
+            mask = opened.convert("L")
+        diagnostics = json.loads(previous["diagnostics_json"])
+        diagnostics["reframed_from_job_id"] = previous["id"]
+        portrait = processing.composite_portrait(cutout, settings)
+        output = processing.ProcessingOutput(cutout, mask, portrait, diagnostics, icc_profile)
+        cutout_hash = previous_outputs["cutout"]["sha256"]
+        key = hashlib.sha256(
+            f"{processing.PIPELINE_VERSION}:{digest}:reframe:{cutout_hash}:{settings.digest()}".encode()
+        ).hexdigest()
         new_job = self.repo.create(capture_id, settings, processing.PIPELINE_VERSION, str(source), digest, key)
         try:
             return self.save_output(new_job, capture_id, source, digest, settings, output, key), (data, source)

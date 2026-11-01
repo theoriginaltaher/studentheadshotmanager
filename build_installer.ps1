@@ -50,6 +50,9 @@ $build = [IO.Path]::GetFullPath($BuildDir)
 $appSource = Join-Path $dist 'StudentHeadshotManager'
 $env:SHM_APP_SOURCE_DIR = $appSource
 $env:PATH = "$root\.venv\Scripts;$env:SystemRoot\System32;$env:SystemRoot"
+# Windows PowerShell 5.1 turns native stderr logging into terminating errors;
+# exit codes are checked explicitly below instead.
+$ErrorActionPreference = 'Continue'
 & $Python -m PyInstaller --noconfirm --clean --distpath "$dist" --workpath "$build" packaging\StudentHeadshotManager.spec 2>&1 | Tee-Object -FilePath "$reports\pyinstaller.txt"
 if ($LASTEXITCODE -ne 0) { throw 'PyInstaller build failed.' }
 & $Python packaging\audit_dependencies.py "$appSource" | Tee-Object -FilePath "$reports\native-dependencies.json"
@@ -79,6 +82,7 @@ if ($smokeResult.result -ne 'PASS' -or -not $smokeResult.frozen) { throw 'Frozen
 $release = [IO.Path]::GetFullPath($ReleaseDir)
 & $ISCC "/O$release" packaging\installer.iss 2>&1 | Tee-Object -FilePath "$reports\inno-setup.txt"
 if ($LASTEXITCODE -ne 0) { throw 'Inno Setup compilation failed.' }
+$ErrorActionPreference = 'Stop'
 $installer=Join-Path $release 'StudentHeadshotManager-Setup.exe'
 if (-not (Test-Path -LiteralPath $installer)) { throw 'Expected installer was not produced.' }
 Compress-Archive -Path $appSource -DestinationPath "$release\StudentHeadshotManager-Portable.zip" -CompressionLevel Optimal

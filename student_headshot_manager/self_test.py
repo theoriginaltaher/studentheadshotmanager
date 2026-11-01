@@ -11,7 +11,8 @@ from .database import Database
 from .capture_repository import CaptureRepository
 from .capture_worker import CaptureController
 from .folders import Folders
-from .processing import ProcessingSettings,PIPELINE_VERSION
+import numpy
+from .processing import ProcessingSettings,PIPELINE_VERSION,semantic_person_mask
 from .processing_service import ProcessingService
 from .review_repository import ReviewRepository
 from .exporting import ExportOptions,build_plan,execute_export,digest
@@ -56,6 +57,9 @@ def run(directory,app):
         service=ProcessingService(db);settings=replace(ProcessingSettings(),canvas_width=600,canvas_height=800)
         job,cache,_=service.process(capture,settings);assert not cache;service.approve(job['id'])
         assert service.process(capture,settings)[1];passed('Local OpenCV/Pillow PNG/JPEG processing, approval and cache')
+        portrait=numpy.full((1100,1000,3),(0,200,0),dtype=numpy.uint8);portrait[250:,300:700]=(190,130,100)
+        semantic=semantic_person_mask(portrait);assert semantic is not None and semantic.shape==(1100,1000)
+        passed('Bundled U2-Net portrait model loads and runs offline')
         ReviewRepository(db).select(student,capture)
         result=execute_export(db.path,build_plan(db.path,ExportOptions('Complete project',include_incomplete=True)),folders.export)
         assert result['copied']==3 and not result['errors'];assert digest(incoming)==original_hash;passed('Export originals, transparent PNG, grey JPEG and CSV manifests; original unchanged')
@@ -69,8 +73,8 @@ def run(directory,app):
         window=MainWindow(db);window.show()
         for index in range(4):window.navigate(index);app.processEvents()
         window.grab().save(str(directory/'window.png'));passed('Native Qt window and all four pages')
-        import cv2,numpy,PySide6,PIL,watchdog
-        report['modules']={module.__name__:module.__file__ for module in (cv2,numpy,PySide6,PIL,watchdog)}
+        import cv2,PySide6,PIL,watchdog,onnxruntime
+        report['modules']={module.__name__:module.__file__ for module in (cv2,numpy,PySide6,PIL,watchdog,onnxruntime)}
         report['result']='PASS';passed('Network socket connections blocked during diagnostics')
         code=0
     except Exception as exc:

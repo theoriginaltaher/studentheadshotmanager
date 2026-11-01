@@ -28,3 +28,6 @@ originals/
 processed/
 exports/
 excports/
+
+# Local trial runs on real student photographs
+output/

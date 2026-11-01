@@ -63,6 +63,25 @@ def test_manual_mask_creates_a_new_reviewable_result(db, processing_capture):
     assert service.outputs_valid(edited)
 
 
+def test_reframe_preserves_cutout_and_mask_without_rerunning_extraction(db, processing_capture, monkeypatch):
+    capture_id, *_ = processing_capture
+    service = ProcessingService(db)
+    first, _, _ = service.process(capture_id, settings())
+    first_outputs = json.loads(first["outputs_json"])
+
+    def forbidden(*args, **kwargs):
+        raise AssertionError("Mask extraction reran while applying framing")
+
+    monkeypatch.setattr(processing, "process_bytes", forbidden)
+    reframed, _ = service.reframe(first["id"], replace(settings(), subject_scale=125, offset_x=9, offset_y=-7))
+    outputs = json.loads(reframed["outputs_json"])
+    assert reframed["id"] != first["id"] and reframed["status"] == "awaiting_review"
+    assert outputs["cutout"]["sha256"] == first_outputs["cutout"]["sha256"]
+    assert outputs["mask"]["sha256"] == first_outputs["mask"]["sha256"]
+    assert outputs["portrait"]["sha256"] != first_outputs["portrait"]["sha256"]
+    assert json.loads(reframed["diagnostics_json"])["reframed_from_job_id"] == first["id"]
+
+
 def test_cache_hits_without_rerunning_pipeline_and_survives_restart(db, processing_capture, monkeypatch):
     capture_id, *_ = processing_capture
     service = ProcessingService(db)

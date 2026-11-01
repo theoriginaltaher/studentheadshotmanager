@@ -5,16 +5,20 @@ import hashlib
 import io
 import json
 from pathlib import Path
+import sys
+import threading
 import warnings
 
 import cv2
 import numpy as np
 from PIL import Image, ImageOps
 
-PIPELINE_VERSION = "local-chroma-key-3"
+PIPELINE_VERSION = "local-person-matting-4"
 MAX_PIXELS = 40_000_000
 MAX_BYTES = 250 * 1024 * 1024
 RAW_EXTENSIONS = {".cr2", ".cr3", ".nef"}
+_PERSON_SESSION = None
+_PERSON_SESSION_LOCK = threading.Lock()
 
 
 @dataclass(frozen=True)
@@ -167,6 +171,47 @@ def border_connected(mask):
     return np.where(work == 128, 255, 0).astype(np.uint8)
 
 
+def person_model_home():
+    root = Path(getattr(sys, "_MEIPASS", Path(__file__).resolve().parent.parent))
+    return root / "assets" / "rembg"
+
+
+def semantic_person_mask(rgb):
+    """Run the bundled local portrait model; small synthetic test images use chroma only."""
+    global _PERSON_SESSION
+    height, width = rgb.shape[:2]
+    if height * width < 1_000_000:
+        return None
+    model = person_model_home() / "models" / "u2netp" / "u2netp.onnx"
+    if not model.is_file():
+        raise ValueError("The bundled portrait model is missing. Reinstall the application before processing.")
+    try:
+        import onnxruntime as ort
+    except ImportError as exc:
+        raise ValueError("The local portrait-processing component is unavailable. Reinstall the application.") from exc
+    with _PERSON_SESSION_LOCK:
+        if _PERSON_SESSION is None:
+            _PERSON_SESSION = ort.InferenceSession(str(model), providers=["CPUExecutionProvider"])
+    scale = min(1.0, 1200.0 / max(height, width))
+    preview = Image.fromarray(rgb).resize(
+        (max(1, round(width * scale)), max(1, round(height * scale))), Image.Resampling.LANCZOS
+    )
+    normalized = np.asarray(preview.convert("RGB").resize((320, 320), Image.Resampling.LANCZOS), dtype=np.float32)
+    normalized /= max(float(normalized.max()), 1e-6)
+    normalized = (normalized - np.array((0.485, 0.456, 0.406), dtype=np.float32)) / np.array(
+        (0.229, 0.224, 0.225), dtype=np.float32
+    )
+    tensor = normalized.transpose(2, 0, 1)[None].astype(np.float32)
+    prediction = _PERSON_SESSION.run(None, {_PERSON_SESSION.get_inputs()[0].name: tensor})[0][:, 0]
+    prediction = np.squeeze(prediction)
+    low, high = float(prediction.min()), float(prediction.max())
+    prediction = (prediction - low) / max(high - low, 1e-6)
+    mask = Image.fromarray(np.clip(prediction * 255, 0, 255).astype(np.uint8)).resize(
+        preview.size, Image.Resampling.LANCZOS
+    )
+    return np.asarray(mask.resize((width, height), Image.Resampling.LANCZOS))
+
+
 def make_mask(rgb, settings):
     settings.validate()
     hsv = cv2.cvtColor(rgb, cv2.COLOR_RGB2HSV)
@@ -180,6 +225,9 @@ def make_mask(rgb, settings):
     foreground = cv2.bitwise_not(green)
     raw_area = int(np.count_nonzero(foreground))
     green_fraction = float(np.count_nonzero(green) / green.size)
+    semantic = semantic_person_mask(rgb)
+    if semantic is not None:
+        foreground = merge_person_prior(green, semantic)
     del hsv, green, green_candidates
     if settings.noise_radius:
         foreground = cv2.morphologyEx(foreground, cv2.MORPH_OPEN, kernel(settings.noise_radius))
@@ -190,6 +238,7 @@ def make_mask(rgb, settings):
     elif settings.edge_shift > 0:
         foreground = cv2.dilate(foreground, kernel(settings.edge_shift))
     diagnostics = inspect_mask(foreground, green_fraction, raw_area)
+    diagnostics["extractor"] = "u2netp-person-plus-chroma" if semantic is not None else "chroma-fallback"
     diagnostics["protected_green_fraction"] = protected_green / foreground.size
     if protected_green > foreground.size * 0.002:
         diagnostics["issues"].append(
@@ -199,6 +248,30 @@ def make_mask(rgb, settings):
     alpha = (cv2.GaussianBlur(foreground, (0, 0), settings.feather)
              if settings.feather > 0 else foreground.copy())
     return foreground, alpha, diagnostics
+
+
+def merge_person_prior(green, semantic):
+    """Combine the chroma key with the portrait model without thinning the subject.
+
+    The model only rescues green-tinted spill on the head and shoulders, and drops
+    non-green objects far from the person (light stands, backdrop edges). Non-green
+    pixels near the person are always kept, so hair the model misses is not removed.
+    """
+    height, width = semantic.shape
+    core = np.where(semantic >= 128, 255, 0).astype(np.uint8)
+    if not np.count_nonzero(core):
+        raise ValueError("The local portrait model could not find a person in this photograph.")
+    reach = max(8, round(0.03 * max(height, width)))
+    distance = cv2.distanceTransform(cv2.bitwise_not(core), cv2.DIST_L2, 3)
+    near = distance <= reach
+    upper_body = np.arange(height)[:, None] < int(height * 0.48)
+    keep = ((green == 0) & (near | (semantic > 12))) | ((green > 0) & (semantic >= 210) & upper_body)
+    _, labels = cv2.connectedComponents(keep.astype(np.uint8), connectivity=8)
+    person_labels = np.unique(labels[(core > 0) & keep])
+    person_labels = person_labels[person_labels > 0]
+    if not len(person_labels):
+        raise ValueError("The local portrait model could not find a person in this photograph.")
+    return np.where(np.isin(labels, person_labels), 255, 0).astype(np.uint8)
 
 
 def inspect_mask(binary, green_fraction, raw_area):
@@ -256,12 +329,20 @@ def suppress_spill(rgb, foreground, alpha, strength, width):
     return result
 
 
+def trim_transparent(cutout):
+    """Return the visible subject bounds while retaining the original cutout file unchanged."""
+    if cutout.mode != "RGBA":
+        cutout = cutout.convert("RGBA")
+    box = cutout.getchannel("A").getbbox()
+    return cutout.crop(box) if box else cutout
+
+
 def composite_portrait(cutout, settings):
     """Fit the full upright source frame with uniform scaling and grey padding."""
     width, height = settings.canvas_width, settings.canvas_height
     inset = settings.padding_percent / 100
     available = (max(1, round(width * (1 - 2 * inset))), max(1, round(height * (1 - 2 * inset))))
-    fitted = ImageOps.contain(cutout, available, Image.Resampling.LANCZOS)
+    fitted = ImageOps.contain(trim_transparent(cutout), available, Image.Resampling.LANCZOS)
     if settings.subject_scale != 100:
         fitted = fitted.resize(
             (max(1, round(fitted.width * settings.subject_scale / 100)),
